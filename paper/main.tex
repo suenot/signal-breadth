@@ -1,0 +1,408 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=blue,urlcolor=blue]{hyperref}
+
+\graphicspath{{figures/}}
+\setlength{\emergencystretch}{2em}  % absorb the few tight monospace lines cleanly
+\newcommand{\Neff}{N_{\mathrm{eff}}}
+\newcommand{\rbar}{\bar{\rho}}
+
+\title{\bfseries How Many Correlated Signals Actually Diversify?\\
+A Controlled Validation of Effective-Breadth Approximations\\ for Trading-Signal Portfolios}
+
+\author{Eugen Soloviov\thanks{Independent Researcher. ORCID:
+\href{https://orcid.org/0009-0006-3148-111X}{0009-0006-3148-111X}.
+Correspondence: \href{mailto:suenot@gmail.com}{suenot@gmail.com}.
+Code to reproduce every number and figure:
+\url{https://github.com/suenot/signal-breadth}.}}
+
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Running one strategy across $N$ instruments is often assumed to give $N$-fold
+diversification, but correlated signals deliver far less. A popular shortcut
+borrows the equicorrelation \emph{effective sample size}
+$\Neff = N/(1+(N-1)\rbar)$ from statistics and uses it both to discount
+diversification and to size the capacity of a slot-limited execution
+orchestrator. We give this shortcut its first controlled test. In a simulation
+where the population correlation structure is known, we generate $N$ correlated
+\emph{binary} trading signals from a latent Gaussian model, and compare $\Neff$
+against two ground truths: the realized variance-reduction of the equal-weight
+signal portfolio, and a correlated-Bernoulli model of execution capacity. Across
+$4{,}000$ simulated portfolios we find: (i) $\Neff$ predicts realized
+diversification only to $\sim$25\% mean absolute error, and \emph{which}
+correlation it is fed matters enormously---the binary signal correlation gives a
+$+20\%$ over-count while the latent correlation gives a $-18\%$ under-count,
+because dichotomizing a signal attenuates its correlation by roughly half (a
+tetrachoric effect we predict to $0.018$ MAE); (ii) Meucci's Effective Number of
+Bets measures a different quantity (factor breadth) and is \emph{not}
+interchangeable with equal-weight variance reduction; and (iii) the capacity
+heuristic $1-(1-p)^{\Neff}$ is simply wrong: the expected number of simultaneously
+active signals is $Np$ by linearity \emph{regardless} of correlation, so the
+$\Neff$-based capacity systematically undershoots, with error growing in $\rbar$,
+and the implied ``optimal number of pairs'' is biased low by 5--6. We conclude
+that $\Neff$ is usable as a rough, correctly-fed breadth discount but must not be
+used to size execution capacity.
+\end{abstract}
+
+\section{Introduction}
+
+A trader who runs the same strategy on $N$ instruments would like to believe the
+result is $N$ roughly-independent bets. It is not: the signals fire together, the
+positions move together, and the realized diversification is a fraction of the
+nominal count \citep{markowitz1952portfolio,grinold1989fundamental}. The
+practical question is how large that fraction is, and whether it can be captured
+by a formula simple enough to use on the desk.
+
+One such formula circulates widely. Borrowed from the design-effect of survey
+sampling \citep{kish1965survey}, the equicorrelation \emph{effective sample size}
+\begin{equation}
+\Neff \;=\; \frac{N}{1+(N-1)\rbar}
+\label{eq:neff}
+\end{equation}
+discounts $N$ by an average pairwise correlation $\rbar$. It is attractive because
+it needs only $N$ and one number, sidestepping the noisy full-covariance
+estimation that more principled measures require
+\citep{laloux1999noise,ledoit2004honey}. In practitioner writing it is used for
+two distinct purposes: to estimate how much diversification a basket of
+correlated strategies actually delivers, and---plugged into an
+independent-arrivals formula $1-(1-p)^{\Neff}$---to size how busy a capacity- or
+slot-limited execution system will be. Neither use has, to our knowledge, been
+validated against ground truth.
+
+We provide that validation in a controlled simulation. Because we generate the
+data, we know the population correlation, the oracle diversification, and the true
+distribution of simultaneously-active signals, and can measure exactly where
+\eqref{eq:neff} succeeds and where it fails. Our findings are deliberately
+mixed---and, where the formula is used for capacity, sharply negative.
+
+\paragraph{Contributions.}
+\begin{enumerate}\itemsep2pt
+\item A reproducible framework that generates $N$ correlated \emph{binary} trading
+signals (and their PnL) from a latent Gaussian model with controllable
+homogeneous or heterogeneous correlation, so realized breadth and execution
+capacity are measurable ground truth (Section~\ref{sec:framework}).
+\item A measurement of $\Neff$'s accuracy as a diversification discount: $\sim$25\%
+error, with the sign of the bias determined by whether one feeds the binary or the
+latent correlation---a distinction the shortcut ignores but that the tetrachoric
+relation makes large (Section~\ref{sec:breadth}).
+\item A clarification that Meucci's Effective Number of Bets, though principled,
+measures factor breadth rather than equal-weight variance reduction and is not a
+drop-in ground truth for this problem (Section~\ref{sec:enb}).
+\item A refutation of the capacity heuristic $1-(1-p)^{\Neff}$: the mean number of
+active signals is $Np$ by linearity for \emph{any} correlation, so the
+$\Neff$-based capacity undershoots with error rising in $\rbar$, biasing the
+implied optimal number of instruments low by 5--6 (Section~\ref{sec:capacity}).
+\end{enumerate}
+
+\section{Related work}
+\label{sec:related}
+
+The question of how many genuinely distinct bets a portfolio contains is as old as
+modern portfolio theory. \citet{markowitz1952portfolio} formalized diversification
+through the covariance structure: portfolio variance depends not on the number of
+holdings but on their co-movement, so the naive count of $N$ positions overstates
+diversification whenever holdings are correlated. We study the analogous
+overstatement for $N$ \emph{trading signals} and ask whether a closed-form
+correction recovers the effective count.
+
+A literature seeks scalar summaries of diversification.
+\citet{meucci2009managing} proposed the Effective Number of Bets (ENB): rotate the
+portfolio onto its uncorrelated principal portfolios, normalize their risk
+contributions into a diversification distribution, and exponentiate its Shannon
+entropy. The ENB equals $N$ when risk is spread evenly over $N$ uncorrelated
+sources and collapses toward one as risk concentrates. It is correlation-aware and
+principled, but requires the full covariance matrix and an
+eigendecomposition---and, as the random-matrix critique
+\citep{laloux1999noise} and shrinkage remedy \citep{ledoit2004honey} stress, that
+matrix is itself noisily estimated.
+
+The active-management literature attacks the same problem through \emph{breadth}.
+\citet{grinold1989fundamental} introduced the Fundamental Law,
+$\mathrm{IR}\approx\mathrm{IC}\cdot\sqrt{BR}$, with breadth $BR$ the number of
+\emph{independent} bets per period; \citet{grinold2000active} develop it in detail.
+Independence is the load-bearing assumption: when signals are correlated the raw
+count overstates breadth. \citet{clarke2002portfolio} generalized the law to
+constrained portfolios via the transfer coefficient, and
+\citet{clarke2006fundamental} extended it to a full covariance matrix, making
+explicit that breadth shrinks and becomes hard to define once signals are
+correlated. These works establish qualitatively that correlation erodes effective
+breadth, but supply no validated closed-form effective count for an arbitrary
+number of binary signals.
+
+A candidate formula exists in classical statistics: under equicorrelation the
+variance of the sample mean of $N$ unit-variance variables is inflated by
+$1+(N-1)\rbar$, giving the effective sample size \eqref{eq:neff}, the
+design-effect of survey sampling \citep{kish1965survey}. Two features of trading
+signals complicate its transplant. First, signals are typically \emph{binary}, and
+the relevant correlation is between Bernoulli indicators, not their latent drivers;
+dichotomizing a bivariate normal attenuates the observed correlation in a
+nonlinear, base-rate-dependent way---the classical tetrachoric problem
+\citep{pearson1900tetrachoric}. Second, dependence is not fully captured by linear
+correlation: stylized facts \citep{cont2001empirical} and copula critiques
+\citep{embrechts2002correlation} warn that a single $\rbar$ can mislead. A
+validation must therefore be explicit about which correlation it uses and under
+what structure it is asked to hold. We close this gap by simulation, taking the
+realized variance reduction and a correlated-Bernoulli capacity model as ground
+truth.
+
+\section{Effective-breadth measures}
+\label{sec:measures}
+
+We compare three quantities. The \textbf{equicorrelation $\Neff$} of
+\eqref{eq:neff}, the object under test, defined for any average correlation
+$\rbar$ in its positive-semidefinite range $\rbar \ge -1/(N-1)$ (a constraint the
+shortcut routinely ignores and we enforce). Meucci's \textbf{Effective Number of
+Bets},
+\begin{equation}
+\mathrm{ENB} = \exp\!\Big(\!-\!\sum_{k=1}^{N} p_k \ln p_k\Big), \qquad
+p_k = \frac{\lambda_k}{\sum_j \lambda_j},
+\end{equation}
+with $\lambda_k$ the eigenvalues of the correlation matrix---a principled measure
+of the number of uncorrelated risk \emph{factors}. And the operational ground
+truth, the \textbf{realized effective $N$}, defined as the variance-reduction
+ratio of the equal-weight portfolio of the $N$ signal-PnL streams,
+\begin{equation}
+N^{\star} = \frac{\overline{\operatorname{Var}}(\text{single stream})}{\operatorname{Var}(\text{equal-weight portfolio})},
+\end{equation}
+which for equicorrelated streams equals $N/(1+(N-1)\rbar_{\text{PnL}})$ exactly and
+is what a trader actually experiences as diversification.
+
+\paragraph{Latent vs.\ binary correlation.} A signal is active when a latent driver
+$z_{i,t}=\sqrt{\rho}\,F_t+\sqrt{1-\rho}\,\varepsilon_{i,t}$ exceeds a threshold set
+to give activation probability $p$. The correlation of the resulting binary
+indicators is \emph{not} $\rho$; thresholding attenuates it
+\citep{pearson1900tetrachoric}. Whether one feeds $\Neff$ the binary signal
+correlation or the latent correlation therefore changes the answer, and the
+shortcut is silent on which to use.
+
+\section{Simulation framework}
+\label{sec:framework}
+
+Each experiment draws a population of $N$ signals over $T$ periods. Latent drivers
+follow a one-factor Gaussian model; in the \emph{homogeneous} case all loadings are
+equal (true equicorrelation $\rho$), while in the \emph{heterogeneous} case
+loadings vary and an optional block structure is added, so pairwise correlations
+are dispersed and \eqref{eq:neff}'s single-$\rbar$ assumption is stressed. Signal
+$i$ is active when its latent driver exceeds $\Phi^{-1}(1-p)$, giving activation
+probability $p$ and a controllable correlation. Per-period PnL is the activation
+times a trade return that loads on the same factor, so active correlated signals
+have correlated PnL. We sample $N\in[3,40]$, $p\in[0.05,0.5]$, and a correlation
+level spanning weak to strong, enforcing the PSD range, and run $4{,}000$
+portfolios ($T=30{,}000$). For execution we add an orchestrator with $K$ slots:
+at each step at most $K$ of the active signals can be filled.
+
+Ground truth is read off the simulation: the realized effective $N$ above; the
+empirical distribution of the number of simultaneously active signals; and the
+slot utilization $\mathbb{E}[\min(\text{active},K)]/K$. We then ask how well the
+$\Neff$-based predictions match.
+
+\section{Results}
+
+\subsection{As a diversification discount, $\Neff$ is rough and sign-sensitive}
+\label{sec:breadth}
+
+Figure~\ref{fig:breadth} and Table~\ref{tab:breadth} report how well $\Neff$
+predicts the realized effective $N$. Fed the \emph{binary} signal correlation,
+$\Neff$ has a mean absolute error of $24.6\%$ and \emph{over}-counts by $+20\%$ on
+average (it sits above the diagonal in Figure~\ref{fig:breadth}a). Fed the
+\emph{latent} correlation it instead \emph{under}-counts by $-18\%$, at a slightly
+larger $32\%$ error. The two biases have opposite sign because the binary
+correlation is attenuated relative to the latent one (next subsection), so the
+binary $\rbar$ is too small and inflates $\Neff$. Notably, accuracy barely
+degrades from homogeneous ($23.8\%$) to heterogeneous ($25.5\%$) structure: here
+the binary attenuation, not correlation heterogeneity, dominates the error.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{fig_breadth_accuracy.pdf}
+\caption{(a) The shortcut's $\Neff$ (fed binary correlation) versus the realized
+effective $N$; points sit systematically above the diagonal (over-counting). (b)
+Mean absolute percentage error by estimator and structure. $\Neff$ is rough
+($\sim$25--33\%); Meucci's ENB measures a different quantity and diverges far more
+(Section~\ref{sec:enb}).}
+\label{fig:breadth}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Accuracy of effective-breadth estimators against the realized
+variance-reduction effective $N$ ($4{,}000$ portfolios). MAPE = mean absolute
+percentage error; bias is signed.}
+\label{tab:breadth}
+\small
+\begin{tabular}{lcc@{\hskip 2em}cc@{\hskip 2em}cc}
+\toprule
+& \multicolumn{2}{c}{Overall} & \multicolumn{2}{c}{Homogeneous} & \multicolumn{2}{c}{Heterogeneous}\\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Estimator & MAPE & bias & MAPE & bias & MAPE & bias \\
+\midrule
+$\Neff$ (binary corr.)  & 24.6\% & $+20.2\%$ & 23.8\% & $+19.4\%$ & 25.5\% & $+21.0\%$ \\
+$\Neff$ (latent corr.)  & 32.4\% & $-17.7\%$ & 32.6\% & $-20.2\%$ & 32.2\% & $-15.3\%$ \\
+Meucci ENB (latent)     & 116.6\% & $+116.4\%$ & 121.9\% & $+121.9\%$ & 111.1\% & $+111.1\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The binary/latent distinction is large and predictable}
+\label{sec:tetrachoric}
+
+The reason \emph{which} correlation one feeds matters is that dichotomizing
+attenuates it. Across our portfolios the mean latent correlation of $0.325$ becomes
+a mean binary signal correlation of $0.177$---an attenuation ratio of $0.53$, with
+the binary correlation below the latent one in $98\%$ of cases. The classical
+tetrachoric relation predicts the binary correlation from the latent one and the
+activation rate to a mean absolute error of just $0.018$. The practical
+consequence is direct: feeding $\Neff$ the (smaller) binary correlation instead of
+the latent one inflates the estimated effective count by $+56\%$ on average ($5.19$
+vs.\ $3.44$). A user of \eqref{eq:neff} who measures correlation on the signals
+themselves---the natural thing to do---systematically overstates diversification.
+
+\subsection{Meucci's ENB answers a different question}
+\label{sec:enb}
+
+It is tempting to treat Meucci's ENB as the ``true'' effective number and judge
+$\Neff$ against it. Our results caution against this. The ENB diverges from the
+realized equal-weight variance reduction by $117\%$ (computed on latent
+correlations) to $192\%$ (on return correlations), far more than $\Neff$ does
+(Table~\ref{tab:breadth}). This is not a failure of the ENB: it faithfully measures
+the number of uncorrelated risk \emph{factors} (the entropy of the eigenvalue
+spectrum), which is a different quantity from the variance reduction obtained by a
+specific equal-weight combination. The lesson is that ``effective number'' is not
+one quantity, and a capacity or diversification claim must name the operational
+target. For the equal-weight signal basket that motivates the shortcut, the
+variance-reduction $N^{\star}$ is the relevant ground truth, and $\Neff$---for all
+its roughness---is far closer to it than the spectral ENB.
+
+\subsection{As a capacity model, the $\Neff$ heuristic is wrong}
+\label{sec:capacity}
+
+The second use of $\Neff$ is to size execution capacity via
+$1-(1-p)^{\Neff}$ and $\mathbb{E}[\text{active}]=\Neff\,p$. This is not merely
+imprecise; it is structurally incorrect. By linearity of expectation the mean
+number of simultaneously active signals is $Np$ for \emph{any} correlation
+structure---correlation changes the \emph{variance} of the active count, not its
+mean. Empirically, $Np$ predicts the simulated mean active count to a MAE of
+$0.012$ (sampling noise), whereas the $\Neff\,p$ heuristic is off by $2.14$ and
+recovers only $0.31\times$ the truth (Table~\ref{tab:capacity}).
+
+Consequently the slot-utilization heuristic systematically undershoots. With one
+slot, $1-(1-p)^{\Neff}$ has mean absolute error $0.21$ and bias $-0.21$, worse than
+even a naive independent-$N$ model ($0.14$); it beats the naive model in only
+$20\%$ of cases. Crucially the error \emph{grows with correlation}
+(Figure~\ref{fig:util}): the Spearman correlation between absolute error and
+$\rbar$ is $0.48$ ($p\approx 4\times10^{-231}$), with MAE rising from $0.13$ at low
+$\rbar$ to $0.25$ at high $\rbar$. With three slots, true utilization is $0.49$ but
+the heuristic predicts $0.23$. The heuristic conflates a real effect (correlation
+makes the active count \emph{lumpier}, so a fixed slot budget is sometimes
+overwhelmed and often idle) with a fall in the \emph{mean} load, which does not
+occur.
+
+\begin{table}[t]
+\centering
+\caption{Execution-capacity predictions vs.\ simulation. The mean active count is
+$Np$ regardless of correlation; the $\Neff$-based heuristic mis-states it.}
+\label{tab:capacity}
+\small
+\begin{tabular}{lcc}
+\toprule
+Quantity & $\Neff$ heuristic & truth / naive $Np$ \\
+\midrule
+Mean active count, MAE                 & 2.14 & 0.012 \\
+Mean active count, ratio to truth      & $0.31\times$ & $1.00\times$ \\
+Slot utilization $K{=}1$, MAE          & 0.21 & 0.14 \\
+Slot utilization $K{=}3$ (sim $0.49$)  & 0.23 & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{fig_utilization.pdf}
+\caption{Execution-capacity error of the $1-(1-p)^{\Neff}$ heuristic. It
+systematically undershoots simulated utilization, and the error grows with the
+correlation $\rbar$---the opposite of the reassurance the formula is meant to
+provide.}
+\label{fig:util}
+\end{figure}
+
+\subsection{The implied ``optimal number of pairs'' is biased low}
+\label{sec:optimal}
+
+Putting the pieces together, a common application chooses the number of instruments
+$N$ that maximizes throughput under a slot budget and a decaying per-instrument
+edge. Because the $\Neff$ capacity model undershoots fill rates, it stops adding
+instruments too early: under a representative setting (one slot, $p=0.15$,
+$\rbar=0.3$, decaying edge) the heuristic recommends $N=7$ while the simulation's
+optimum is $N=12$ (homogeneous) or $N=13$ (heterogeneous), a shortfall of 5--6
+instruments (Figure~\ref{fig:optn}). A desk following the formula would under-deploy
+capital.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.7\textwidth]{fig_optimal_n.pdf}
+\caption{Throughput vs.\ number of instruments under a slot budget and decaying
+edge. The $\Neff$ heuristic's throughput peaks early ($N\!=\!7$); the simulated
+truth keeps rising to $N\!=\!12$--$13$.}
+\label{fig:optn}
+\end{figure}
+
+\section{Discussion}
+
+The shortcut $\Neff=N/(1+(N-1)\rbar)$ should be split into its two uses. As a
+\emph{diversification discount} it is defensible: roughly $25\%$ error is often
+acceptable for back-of-envelope sizing, provided one feeds it the \emph{latent}
+(or return) correlation rather than the attenuated binary signal correlation, and
+remembers that it targets equal-weight variance reduction, not the spectral ENB.
+As a \emph{capacity model} it should be discarded: the mean load on an execution
+system is $Np$ irrespective of correlation, and the relevant effect of correlation
+is on the \emph{dispersion} of the load, which a correlated-Bernoulli (or directly
+simulated) model captures and $1-(1-p)^{\Neff}$ does not. The single most common
+error we can identify in practitioner usage---measuring correlation on the binary
+signals and plugging the result into a capacity formula---compounds both mistakes
+in the same direction, overstating diversification while understating load.
+
+\section{Limitations}
+
+Our dependence is Gaussian-copula with one factor plus optional blocks; real
+signals exhibit tail co-movement and regime-dependent correlation
+\citep{cont2001empirical,embrechts2002correlation} that a single $\rbar$ cannot
+represent and that would further stress $\Neff$. We study equal-weight baskets and
+a simple slot orchestrator; capacity-aware weighting, queueing, and
+priority among signals are out of scope. Activation is a fixed-threshold binary;
+graded position sizing would change the tetrachoric attenuation. Finally we model
+no transaction costs, and our ``edge decay'' for the optimal-$N$ exercise is a
+stylized assumption, not an empirical estimate. None of these affects the central,
+structural result---$\mathbb{E}[\text{active}]=Np$---which is exact.
+
+\section{Conclusion}
+
+We tested a popular effective-number shortcut for portfolios of correlated trading
+signals against simulated ground truth. As a diversification discount it is a rough
+but usable approximation, provided it is fed the right (latent, not binary)
+correlation and judged against equal-weight variance reduction rather than the
+spectral Effective Number of Bets, which measures a different quantity. As a model
+of execution capacity it is structurally wrong---the mean load is correlation-free
+$Np$, and the heuristic's error grows with correlation---biasing the implied
+optimal number of instruments low by 5--6. Use $\Neff$ to discount breadth, fed
+correctly; never to size a slot budget.
+
+\paragraph{Reproducibility.} All experiments are deterministic given the released
+seeds; the script \texttt{run\_all.py} regenerates every number and figure. The
+generative model, the breadth and capacity measures, and the analysis are provided
+as an open-source package.
+
+\small
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}
