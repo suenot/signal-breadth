@@ -5,22 +5,32 @@ desk shortcut: the equicorrelation **effective number** `N_eff = N/(1+(N-1)ρ̄)
 used both to discount the diversification of `N` correlated trading signals and to
 size a slot-limited execution orchestrator via `1-(1-p)^N_eff`.
 
-> **Headline findings** (4,000 simulated portfolios with known ground truth):
-> 1. As a **diversification discount**, `N_eff` is rough (~25% error) and
->    **sign-sensitive**: fed the *binary* signal correlation it over-counts by
->    +20%; fed the *latent* correlation it under-counts by −18%. The gap is the
->    tetrachoric attenuation of dichotomized signals (latent 0.33 → binary 0.18,
->    predicted to 0.018 MAE).
+> **Headline findings** (4,000 simulated portfolios with known ground truth;
+> the return-factor loading β is an explicit swept design parameter
+> ∈ {0, 0.3, 0.6, 0.9}, not a hidden constant):
+> 1. As a **diversification discount** for the binary signal streams themselves,
+>    `N_eff` is essentially **exact** (0.02% error). For the **PnL** streams its
+>    accuracy — and even the *sign* of its bias — depends on β: binary-fed bias
+>    swings from −56% (β=0) to +91% (β=0.9), +22% at the central β=0.6. The
+>    β-robust effect is the **feeding gap**: tetrachoric attenuation (latent 0.32
+>    → binary 0.18, predicted to 0.018 MAE) makes any binary-fed estimate claim
+>    ~56% more breadth than the latent-fed one.
 > 2. Meucci's **Effective Number of Bets** measures a *different* quantity (factor
 >    breadth) and is **not** interchangeable with equal-weight variance reduction.
-> 3. As a **capacity model** it is **structurally wrong**: the mean number of
->    simultaneously active signals is `N·p` by linearity *regardless* of
->    correlation, so `1-(1-p)^N_eff` undershoots — error **growing with ρ̄** — and
->    the implied "optimal number of pairs" is biased low by 5–6.
+> 3. As a **capacity model**: the mean number of simultaneously active signals is
+>    `N·p` by linearity *regardless* of correlation, so the `N_eff·p` load
+>    estimate is structurally wrong (0.31×/0.44× the true load, latent/binary-fed).
+>    The `1-(1-p)^N_eff` fill heuristic undershoots: latent-fed it is worse than
+>    assuming independence (MAE 0.21 vs 0.14, beats naive in 20% of cases);
+>    binary-fed it is better (MAE 0.11, 68%) — yet both bias the implied "optimal
+>    number of pairs" low (by 4–6 / 2–4 at the homogeneous design point), at a
+>    modest ≤7% throughput cost because the score curve is flat.
 
-Bottom line: use `N_eff` to discount breadth (fed the *latent* correlation);
-never to size a slot budget. This is a de-commercialized, experimentally-validated
-rewrite of a [marketmaker.cc](https://marketmaker.cc) blog post.
+Bottom line: use `N_eff` as a conservative breadth discount fed the *latent*
+(or return) correlation; size slot budgets from `N·p` and the distribution of
+the active count, never from `N_eff`. This is a de-commercialized,
+experimentally-validated audit of a [marketmaker.cc](https://marketmaker.cc)
+blog post by the same author.
 
 ## Reproduce everything
 
@@ -50,7 +60,7 @@ signal_experiments/
   analysis.py     # breadth accuracy, binary-latent gap, utilization error
   figures.py      # the paper's figures
 scripts/run_all.py
-tests/            # pytest sanity checks (12 tests)
+tests/            # pytest sanity checks (17 tests)
 paper/            # main.tex, refs.bib, figures/, compiled main.pdf
 results/          # results.json + records.csv (generated)
 docs/             # related-work notes
@@ -59,7 +69,7 @@ docs/             # related-work notes
 ## Tests
 
 ```bash
-python -m pytest -q     # 12 sanity tests
+python -m pytest -q     # 17 sanity tests
 ```
 
 ## License

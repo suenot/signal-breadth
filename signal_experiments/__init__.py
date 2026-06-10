@@ -13,7 +13,7 @@ from .breadth import (
     realized_effective_n,
     realized_effective_n_from_corr,
 )
-from .simulate import optimal_pairs, rho_sweep, run_batch, run_experiment
+from .simulate import optimal_pairs, optimal_pairs_multi, rho_sweep, run_batch, run_experiment
 from .model import (
     SignalConfig,
     SimulatedSignals,
@@ -60,5 +60,6 @@ __all__ = [
     "run_batch",
     "rho_sweep",
     "optimal_pairs",
+    "optimal_pairs_multi",
 ]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

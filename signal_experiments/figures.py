@@ -95,7 +95,8 @@ def fig_breadth_accuracy(path: Path, df: pd.DataFrame) -> None:
                color=C_TRUE, label="homogeneous")
     ax.scatter(het[truth_col], het["neff_post_binary"], s=10, alpha=0.5,
                color=C_POST, label="heterogeneous")
-    lim = [0, max(df[truth_col].quantile(0.99), df["neff_post_binary"].quantile(0.99))]
+    # full data range -- no axis clipping of any point
+    lim = [0, 1.02 * max(df[truth_col].max(), df["neff_post_binary"].max())]
     ax.plot(lim, lim, "k--", lw=1, label="exact")
     ax.set_xlim(lim); ax.set_ylim(lim)
     ax.set_title(r"(a) post's $N_{\mathrm{eff}}$ (binary corr) vs truth")
@@ -135,27 +136,43 @@ def fig_breadth_accuracy(path: Path, df: pd.DataFrame) -> None:
 # Fig 3: utilization -- simulated vs naive vs heuristic across rho
 # --------------------------------------------------------------------------- #
 def fig_utilization(path: Path, sweep: list[dict]) -> None:
+    """Both heuristic feedings vs naive vs simulated truth, and the |error|
+    curves including the crossover where the latent-fed heuristic starts
+    beating the naive model at high rho."""
     sw = pd.DataFrame(sweep)
     fig, axes = plt.subplots(1, 2, figsize=(9.4, 3.6))
 
     ax = axes[0]
     ax.plot(sw["rho"], sw["p_at_least_one_naive"], "o-", color=C_NAIVE,
             label=r"naive $1-(1-p)^N$")
-    ax.plot(sw["rho"], sw["p_at_least_one_heuristic"], "s-", color=C_POST,
-            label=r"post $1-(1-p)^{N_{\mathrm{eff}}}$")
+    ax.plot(sw["rho"], sw["p_at_least_one_heuristic_latent"], "s-", color=C_POST,
+            label=r"post, latent-fed $N_{\mathrm{eff}}$")
+    ax.plot(sw["rho"], sw["p_at_least_one_heuristic_binary"], "d-", color=C_PTS,
+            label=r"post, binary-fed $N_{\mathrm{eff}}$")
     ax.plot(sw["rho"], sw["p_at_least_one_sim"], "^-", color=C_TRUE,
             label="simulated (correlated)")
     ax.set_title(r"(a) $P(\geq 1$ active$)$ vs latent $\rho$")
     ax.set_xlabel(r"latent correlation $\rho$")
     ax.set_ylabel(r"$P(\geq 1$ active$)$")
-    ax.legend(fontsize=7, loc="upper right")
+    ax.legend(fontsize=7, loc="lower left")
 
     ax = axes[1]
-    ax.plot(sw["rho"], np.abs(sw["err_heuristic"]), "s-", color=C_POST,
-            label="post heuristic")
-    ax.plot(sw["rho"], np.abs(sw["err_naive"]), "o-", color=C_NAIVE, label="naive")
+    abs_lat = np.abs(sw["err_heuristic_latent"])
+    abs_naive = np.abs(sw["err_naive"])
+    ax.plot(sw["rho"], abs_lat, "s-", color=C_POST, label="post, latent-fed")
+    ax.plot(sw["rho"], np.abs(sw["err_heuristic_binary"]), "d-", color=C_PTS,
+            label="post, binary-fed")
+    ax.plot(sw["rho"], abs_naive, "o-", color=C_NAIVE, label="naive")
+    # mark the crossover where the latent-fed heuristic starts beating naive
+    d = np.asarray(abs_lat) - np.asarray(abs_naive)
+    worse = np.where(d > 0)[0]  # rhos where naive is better
+    if len(worse) and worse[-1] + 1 < len(d) and d[worse[-1] + 1] < 0:
+        rho_c = float(sw["rho"].iloc[worse[-1] + 1])
+        ax.axvline(rho_c, color="k", lw=0.8, ls=":")
+        ax.text(rho_c + 0.01, float(np.max(abs_naive)) * 0.55,
+                f"crossover\n$\\rho\\approx{rho_c:.1f}$", fontsize=6.5)
     ax.axhline(0, color="k", lw=0.6)
-    ax.set_title(r"(b) heuristic error grows with $\rho$")
+    ax.set_title(r"(b) $|$error$|$ vs $\rho$: latent-fed crosses below naive")
     ax.set_xlabel(r"latent correlation $\rho$")
     ax.set_ylabel(r"$|$predicted $-$ simulated$|$")
     ax.legend(fontsize=7, loc="upper left")
@@ -166,12 +183,17 @@ def fig_utilization(path: Path, sweep: list[dict]) -> None:
 # Fig 4: practical optimal-N -- post analytic vs simulated
 # --------------------------------------------------------------------------- #
 def fig_optimal_n(path: Path, opt: dict) -> None:
-    rows = pd.DataFrame(opt["rows"])
+    """Representative seed of the multi-seed optimal-N exercise, showing both
+    heuristic feedings against the simulated truth."""
+    rep = opt.get("representative", opt)  # accept multi-seed or single result
+    rows = pd.DataFrame(rep["rows"])
     fig, axes = plt.subplots(1, 2, figsize=(9.4, 3.6))
 
     ax = axes[0]
-    ax.plot(rows["n_pairs"], rows["fill_post"], "s--", color=C_POST,
-            label="post fill efficiency")
+    ax.plot(rows["n_pairs"], rows["fill_post_latent"], "s--", color=C_POST,
+            label="post fill (latent-fed)")
+    ax.plot(rows["n_pairs"], rows["fill_post_binary"], "d--", color=C_PTS,
+            label="post fill (binary-fed)")
     ax.plot(rows["n_pairs"], rows["fill_sim"], "^-", color=C_TRUE,
             label="simulated fill efficiency")
     ax.plot(rows["n_pairs"], rows["avg_edge"], "o-", color=C_ENB, label="avg edge (decaying)")
@@ -180,12 +202,15 @@ def fig_optimal_n(path: Path, opt: dict) -> None:
     ax.legend(fontsize=7)
 
     ax = axes[1]
-    ax.plot(rows["n_pairs"], rows["score_post"], "s--", color=C_POST,
-            label=f"post (opt $N={opt['optimal_n_post']}$)")
+    ax.plot(rows["n_pairs"], rows["score_post_latent"], "s--", color=C_POST,
+            label=f"post latent-fed (opt $N={rep['optimal_n_post_latent']}$)")
+    ax.plot(rows["n_pairs"], rows["score_post_binary"], "d--", color=C_PTS,
+            label=f"post binary-fed (opt $N={rep['optimal_n_post_binary']}$)")
     ax.plot(rows["n_pairs"], rows["score_sim"], "^-", color=C_TRUE,
-            label=f"simulated (opt $N={opt['optimal_n_sim']}$)")
-    ax.axvline(opt["optimal_n_post"], color=C_POST, lw=0.8, ls=":")
-    ax.axvline(opt["optimal_n_sim"], color=C_TRUE, lw=0.8, ls=":")
+            label=f"simulated (opt $N={rep['optimal_n_sim']}$)")
+    ax.axvline(rep["optimal_n_post_latent"], color=C_POST, lw=0.8, ls=":")
+    ax.axvline(rep["optimal_n_post_binary"], color=C_PTS, lw=0.8, ls=":")
+    ax.axvline(rep["optimal_n_sim"], color=C_TRUE, lw=0.8, ls=":")
     ax.set_title("(b) portfolio score = avg edge $\\times$ fill")
     ax.set_xlabel("number of pairs $N$")
     ax.set_ylabel("expected portfolio PnL / step")
@@ -199,11 +224,11 @@ def main() -> None:
     df = pd.read_csv(RESULTS / "records.csv")
     results = json.loads((RESULTS / "results.json").read_text())
 
-    # recompute the small illustrative panels deterministically
+    # recompute the small illustrative panels deterministically if missing
     sweep = results.get("rho_sweep") or rho_sweep(
         np.linspace(0.0, 0.8, 9), n_pairs=10, p_active=0.10, seed=303, reps=3)
     opt = results.get("optimal_n") or optimal_pairs(
-        p_active=0.15, rho=0.30, max_pairs=30, seed=404)
+        p_active=0.15, rho=0.30, max_pairs=30, seed=404)  # fig handles either shape
 
     fig_setup(FIGDIR / "fig_setup.pdf")
     fig_breadth_accuracy(FIGDIR / "fig_breadth_accuracy.pdf", df)

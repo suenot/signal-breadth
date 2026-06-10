@@ -62,7 +62,10 @@ class SignalConfig:
     # --- return model -----------------------------------------------------
     edge_per_trade: float = 0.05   # mean return of an active trade (the "edge")
     trade_vol: float = 1.0         # idiosyncratic per-trade return volatility
-    factor_return_beta: float = 0.6  # how strongly trade returns load on the factor
+    # How strongly trade returns load on the common factor. NOT a hidden
+    # constant: ``sample_config`` draws it from SAMPLED_BETA_GRID because the
+    # headline breadth-accuracy biases (and their signs) depend on it.
+    factor_return_beta: float = 0.6
 
     label: str = "custom"
 
@@ -110,6 +113,13 @@ def _factor_loadings(cfg: SignalConfig, rng: np.random.Generator) -> tuple[np.nd
     Column 0 is the common ("BTC") factor; columns 1.. are block factors. Each
     row (pair) is scaled so its latent variance is exactly 1, giving a valid
     correlation matrix with *unequal* pairwise correlations whose mean is ~rho.
+
+    Rows whose factor variance would exceed ``0.97**2`` (possible when a large
+    common loading combines with a block loading) are renormalized -- the whole
+    loading row is scaled down, preserving its relative structure -- so the total
+    latent variance is exactly 1. Without this, the latent variance could reach
+    ~1.19 and the realized activation probability would silently exceed the
+    configured ``p``.
     """
     n = cfg.n_pairs
     # common-factor loadings centered so mean implied common correlation ~ rho
@@ -125,9 +135,16 @@ def _factor_loadings(cfg: SignalConfig, rng: np.random.Generator) -> tuple[np.nd
         block_load = np.sqrt(cfg.block_share)
         for k in range(cfg.n_blocks):
             b[block_id == k, 1 + k] = block_load
-    # idiosyncratic variance makes each row unit-variance
-    common_var = np.sum(b**2, axis=1)
-    idio_var = np.clip(1.0 - common_var, 1e-6, None)
+    # renormalize any row whose factor variance exceeds the cap, preserving the
+    # row's relative loading structure; then idiosyncratic variance tops each
+    # row up to *exactly* unit latent variance (no silent clipping).
+    factor_var = np.sum(b**2, axis=1)
+    cap = 0.97**2
+    over = factor_var > cap
+    if over.any():
+        b[over, :] *= np.sqrt(cap / factor_var[over])[:, None]
+        factor_var = np.sum(b**2, axis=1)
+    idio_var = 1.0 - factor_var  # >= 1 - cap > 0 by construction
     return b, np.sqrt(idio_var)
 
 
@@ -210,6 +227,13 @@ def simulate(cfg: SignalConfig, rng: np.random.Generator) -> SimulatedSignals:
 # --------------------------------------------------------------------------- #
 # random sampler for Monte-Carlo batches
 # --------------------------------------------------------------------------- #
+# The ACTUAL sampled design of the main batch (reported verbatim in the paper).
+SAMPLED_N_GRID: tuple[int, ...] = (5, 8, 10, 15, 20, 30)
+SAMPLED_P_GRID: tuple[float, ...] = (0.05, 0.10, 0.15, 0.25, 0.45)
+SAMPLED_BETA_GRID: tuple[float, ...] = (0.0, 0.3, 0.6, 0.9)
+SAMPLED_RHO_RANGE: tuple[float, float] = (0.0, 0.7)
+
+
 def sample_config(
     rng: np.random.Generator,
     *,
@@ -217,11 +241,19 @@ def sample_config(
     t_steps: int = 20_000,
 ) -> SignalConfig:
     """Draw a diverse, PSD-valid config spanning homogeneous and heterogeneous
-    correlation structures and a range of (N, p, rho)."""
-    n = int(rng.choice([5, 8, 10, 15, 20, 30]))
-    p = float(rng.choice([0.05, 0.10, 0.15, 0.25, 0.45]))
+    correlation structures and a range of (N, p, rho, beta).
+
+    ``factor_return_beta`` -- how strongly trade returns load on the common
+    factor -- is an explicit sampled parameter (``SAMPLED_BETA_GRID``), NOT a
+    hidden constant: the accuracy and even the *sign* of the bias of the
+    equicorrelation N_eff against the realized PnL effective N depend on it.
+    """
+    n = int(rng.choice(SAMPLED_N_GRID))
+    p = float(rng.choice(SAMPLED_P_GRID))
     # keep rho inside the PSD range and away from the degenerate top
-    rho = float(np.clip(rng.uniform(0.0, 0.7), max(equicorr_psd_floor(n), 0.0), 0.95))
+    rho = float(np.clip(rng.uniform(*SAMPLED_RHO_RANGE),
+                        max(equicorr_psd_floor(n), 0.0), 0.95))
+    beta = float(rng.choice(SAMPLED_BETA_GRID))
 
     if structure == "random":
         structure = rng.choice(["equicorr", "factor"], p=[0.5, 0.5])
@@ -229,7 +261,7 @@ def sample_config(
     if structure == "equicorr":
         return SignalConfig(
             n_pairs=n, p_active=p, rho=rho, structure="equicorr",
-            t_steps=t_steps, label="equicorr",
+            factor_return_beta=beta, t_steps=t_steps, label="equicorr",
         )
 
     # heterogeneous one-factor, possibly with blocks
@@ -240,7 +272,7 @@ def sample_config(
     return SignalConfig(
         n_pairs=n, p_active=p, rho=rho, structure="factor",
         n_blocks=n_blocks, loading_dispersion=dispersion, block_share=block_share,
-        t_steps=t_steps, label=f"factor_b{n_blocks}",
+        factor_return_beta=beta, t_steps=t_steps, label=f"factor_b{n_blocks}",
     )
 
 

@@ -106,8 +106,10 @@ def rho_sweep(
     reps: int = 3,
 ) -> list[dict]:
     """Hold (N, p) fixed and sweep latent ``rho`` in the homogeneous world; report
-    the three utilization predictions vs simulated truth at each rho (averaged
-    over ``reps`` seeds). Isolates how the heuristic error grows with rho."""
+    the utilization predictions (naive + both heuristic feedings) vs simulated
+    truth at each rho (averaged over ``reps`` seeds). Isolates how each
+    prediction's error changes with rho, including the crossover where the
+    latent-fed heuristic starts beating the naive model."""
     out = []
     ss = np.random.SeedSequence(seed)
     for ri, rho in enumerate(rhos):
@@ -119,8 +121,11 @@ def rho_sweep(
             sim = simulate(cfg, rng)
             u = utilization_predictions(sim, k_slots=k_slots)
             for key in ("p_at_least_one_sim", "p_at_least_one_naive",
-                        "p_at_least_one_heuristic", "err_heuristic", "err_naive",
-                        "abs_err_heuristic", "abs_err_naive", "rho_latent"):
+                        "p_at_least_one_heuristic_latent",
+                        "p_at_least_one_heuristic_binary",
+                        "err_heuristic_latent", "err_heuristic_binary", "err_naive",
+                        "abs_err_heuristic_latent", "abs_err_heuristic_binary",
+                        "abs_err_naive", "rho_latent", "rho_binary"):
                 accs.setdefault(key, []).append(u[key])
         row = {"rho": float(rho)}
         row.update({k: float(np.mean(v)) for k, v in accs.items()})
@@ -136,6 +141,9 @@ def optimal_pairs(
     p_active: float = 0.15,
     rho: float = 0.30,
     structure: str = "equicorr",
+    n_blocks: int = 1,
+    loading_dispersion: float = 0.0,
+    block_share: float = 0.0,
     max_pairs: int = 30,
     k_slots: int = 1,
     edge_top: float = 0.9,
@@ -148,63 +156,137 @@ def optimal_pairs(
     edge-degradation model, comparing the *post's analytic* utilization
     (``1-(1-p)^{N_eff}`` capped by slots) against the *simulated* utilization.
 
-    Edge of the k-th best pair decays geometrically: ``edge_k = edge_top * (1-edge_decay)^{k-1}``.
-    Portfolio score ``= avg_edge(N) * utilization(N)``. We report the optimal N
-    under each utilization model and whether they agree.
+    The analytic heuristic is evaluated under BOTH feedings: the measured mean
+    latent correlation and the measured mean binary-activation correlation
+    (each averaged over ``reps`` independent simulations per N, so
+    heterogeneous loadings are properly resampled).
+
+    For a genuinely heterogeneous run pass ``structure="factor"`` together with
+    nonzero ``loading_dispersion`` (and optionally ``n_blocks``/``block_share``);
+    with the defaults a "factor" structure degenerates to equicorrelation.
+
+    Edge of the k-th best pair decays geometrically:
+    ``edge_k = edge_top * (1-edge_decay)^{k-1}``. Portfolio score
+    ``= avg_edge(N) * fill(N)``. We report the optimal N under each utilization
+    model and the throughput cost of following each heuristic optimum.
     """
+    from .breadth import binary_corr_matrix, equicorr_neff, mean_offdiag
+    from .utilization import pred_post_heuristic, simulated_utilization
+
     edges = edge_top * (1.0 - edge_decay) ** np.arange(max_pairs)
     avg_edge = np.cumsum(edges) / np.arange(1, max_pairs + 1)
 
     ss = np.random.SeedSequence(seed)
     rows = []
-    for idx in range(1, max_pairs + 1):
-        n = idx
-        # analytic (post) utilization with N_eff and slots
-        from .breadth import equicorr_neff
-        from .utilization import pred_post_heuristic
-
-        neff = equicorr_neff(n, rho)
-        p_one_post = pred_post_heuristic(n, p_active, rho)
-        mean_active_post = neff * p_active if np.isfinite(neff) else np.nan
-        util_post = min(mean_active_post, k_slots) / k_slots if np.isfinite(mean_active_post) else np.nan
-        # the post uses fill_efficiency = min(p_at_least_one, utilization)
-        fill_post = min(p_one_post, util_post) if np.isfinite(util_post) else p_one_post
-
-        # simulated utilization (averaged over reps)
+    for n in range(1, max_pairs + 1):
+        rho_lat_list, rho_bin_list = [], []
         util_sim_list, fill_one_sim_list = [], []
         for rep in range(reps):
             rng = np.random.default_rng(ss.spawn(1)[0])
             cfg = SignalConfig(n_pairs=n, p_active=p_active, rho=rho,
-                               structure=structure, t_steps=t_steps, label="optN")
+                               structure=structure, n_blocks=n_blocks,
+                               loading_dispersion=loading_dispersion,
+                               block_share=block_share,
+                               t_steps=t_steps, label="optN")
             sim = simulate(cfg, rng)
-            from .utilization import simulated_utilization
-
+            rho_lat_list.append(mean_offdiag(sim.corr_latent))
+            rho_bin_list.append(
+                mean_offdiag(binary_corr_matrix(sim.activations)) if n >= 2 else 0.0)
             su = simulated_utilization(sim.activations, k_slots)
             util_sim_list.append(su["utilization"])
             fill_one_sim_list.append(su["p_at_least_one"])
+        rho_lat = float(np.mean(rho_lat_list))
+        rho_bin = float(np.mean(rho_bin_list))
+
+        def analytic_fill(rho_bar: float) -> float:
+            # the post uses fill_efficiency = min(p_at_least_one, utilization)
+            neff = equicorr_neff(n, rho_bar)
+            p_one = pred_post_heuristic(n, p_active, rho_bar)
+            mean_active = neff * p_active if np.isfinite(neff) else np.nan
+            util = (min(mean_active, k_slots) / k_slots
+                    if np.isfinite(mean_active) else np.nan)
+            return min(p_one, util) if np.isfinite(util) else p_one
+
+        fill_post_latent = analytic_fill(rho_lat)
+        fill_post_binary = analytic_fill(rho_bin)
         util_sim = float(np.mean(util_sim_list))
         fill_one_sim = float(np.mean(fill_one_sim_list))
         fill_sim = min(fill_one_sim, util_sim)
 
         rows.append({
             "n_pairs": n,
-            "avg_edge": float(avg_edge[idx - 1]),
-            "fill_post": float(fill_post),
+            "avg_edge": float(avg_edge[n - 1]),
+            "rho_latent": rho_lat,
+            "rho_binary": rho_bin,
+            "fill_post_latent": float(fill_post_latent),
+            "fill_post_binary": float(fill_post_binary),
             "fill_sim": float(fill_sim),
-            "score_post": float(avg_edge[idx - 1] * fill_post),
-            "score_sim": float(avg_edge[idx - 1] * fill_sim),
+            "score_post_latent": float(avg_edge[n - 1] * fill_post_latent),
+            "score_post_binary": float(avg_edge[n - 1] * fill_post_binary),
+            "score_sim": float(avg_edge[n - 1] * fill_sim),
         })
 
-    scores_post = np.array([r["score_post"] for r in rows])
-    scores_sim = np.array([r["score_sim"] for r in rows])
-    opt_post = int(np.nanargmax(scores_post)) + 1
-    opt_sim = int(np.nanargmax(scores_sim)) + 1
+    def argmax_n(key: str) -> int:
+        return int(np.nanargmax(np.array([r[key] for r in rows]))) + 1
+
+    opt_post_latent = argmax_n("score_post_latent")
+    opt_post_binary = argmax_n("score_post_binary")
+    opt_sim = argmax_n("score_sim")
+    score_sim_arr = np.array([r["score_sim"] for r in rows])
+    best_sim = float(score_sim_arr[opt_sim - 1])
+
+    def throughput_cost_pct(opt_post: int) -> float:
+        """% of the simulated max score lost by trading at the heuristic's N."""
+        if best_sim <= 0:
+            return float("nan")
+        return float((1.0 - score_sim_arr[opt_post - 1] / best_sim) * 100.0)
+
     return {
         "params": {"p_active": p_active, "rho": rho, "structure": structure,
-                   "k_slots": k_slots, "edge_top": edge_top, "edge_decay": edge_decay},
+                   "n_blocks": n_blocks, "loading_dispersion": loading_dispersion,
+                   "block_share": block_share, "k_slots": k_slots,
+                   "edge_top": edge_top, "edge_decay": edge_decay,
+                   "t_steps": t_steps, "seed": seed, "reps": reps},
         "rows": rows,
-        "optimal_n_post": opt_post,
+        "optimal_n_post_latent": opt_post_latent,
+        "optimal_n_post_binary": opt_post_binary,
         "optimal_n_sim": opt_sim,
-        "agree": int(opt_post == opt_sim),
-        "n_gap": opt_post - opt_sim,
+        "gap_latent": opt_post_latent - opt_sim,
+        "gap_binary": opt_post_binary - opt_sim,
+        "throughput_cost_pct_latent": throughput_cost_pct(opt_post_latent),
+        "throughput_cost_pct_binary": throughput_cost_pct(opt_post_binary),
     }
+
+
+def optimal_pairs_multi(n_seeds: int = 5, *, seed: int = 0, **kwargs) -> dict:
+    """Run ``optimal_pairs`` across ``n_seeds`` independent seeds and report the
+    per-seed optima plus their spread. The simulated score curve is flat near
+    its maximum, so a single-seed optimum is noisy; the spread quantifies that
+    noise, and the throughput cost says how much following the heuristic's N
+    actually loses."""
+    runs = [optimal_pairs(seed=seed + 1000 * i, **kwargs) for i in range(n_seeds)]
+    out = {
+        "n_seeds": int(n_seeds),
+        "base_seed": int(seed),
+        "params": runs[0]["params"],
+        "per_seed": [
+            {k: r[k] for k in (
+                "optimal_n_post_latent", "optimal_n_post_binary", "optimal_n_sim",
+                "gap_latent", "gap_binary",
+                "throughput_cost_pct_latent", "throughput_cost_pct_binary")}
+            for r in runs
+        ],
+        # full curve of the first seed, for the figure
+        "representative": runs[0],
+    }
+    for key in ("optimal_n_post_latent", "optimal_n_post_binary", "optimal_n_sim",
+                "gap_latent", "gap_binary"):
+        vals = [r[key] for r in runs]
+        out[f"{key}_min"] = int(min(vals))
+        out[f"{key}_max"] = int(max(vals))
+        out[f"{key}_median"] = float(np.median(vals))
+    for key in ("throughput_cost_pct_latent", "throughput_cost_pct_binary"):
+        vals = [r[key] for r in runs]
+        out[f"{key}_mean"] = float(np.mean(vals))
+        out[f"{key}_max"] = float(np.max(vals))
+    return out

@@ -10,7 +10,8 @@ Four questions, all answered with measured numbers (no fabrication):
      correlation is systematically below latent correlation, so the breadth you
      get from signal correlation differs from latent/return correlation.
   3. **Utilization heuristic error.** Error of ``1-(1-p)^{N_eff}`` vs the
-     simulated correlated-Bernoulli truth, and how it grows with rho.
+     simulated correlated-Bernoulli truth, under BOTH feedings (latent and
+     binary correlation), and how each error depends on rho.
   4. **Optimal-N.** Does the optimal number of pairs predicted by the post's
      analytic utilization match the one from simulation?
 
@@ -79,10 +80,13 @@ def breadth_accuracy(df: pd.DataFrame) -> dict:
 
 
 def breadth_accuracy_by_rho(df: pd.DataFrame, bins=(0.0, 0.1, 0.25, 0.45, 0.7, 1.0)) -> list[dict]:
-    """MAPE of post N_eff vs ENB across latent-rho bins, split by structure, vs
-    the realized PnL effective N."""
+    """MAPE of the post's N_eff (both feedings) vs ENB across latent-rho bins,
+    overall and split by structure, vs the realized PnL effective N. The
+    binary-fed formula is *worst in the weak-correlation regime* and improves
+    strongly as rho grows -- one of the paper's reported results."""
     rows = []
-    for struct, mask in [("homogeneous", df["is_homogeneous"] == 1),
+    for struct, mask in [("overall", df["is_homogeneous"].notna()),
+                         ("homogeneous", df["is_homogeneous"] == 1),
                          ("heterogeneous", df["is_homogeneous"] == 0)]:
         h = df[mask].copy()
         h["rho_bin"] = pd.cut(h["rho_latent"], bins=list(bins), include_lowest=True)
@@ -94,8 +98,58 @@ def breadth_accuracy_by_rho(df: pd.DataFrame, bins=(0.0, 0.1, 0.25, 0.45, 0.7, 1
                 "rho_bin": str(b),
                 "n": int(len(g)),
                 "mape_post_neff_binary": _mape(g["relerr_neff_post_binary"]),
+                "mape_post_neff_latent": _mape(g["relerr_neff_post_latent"]),
                 "mape_enb_latent": _mape(g["relerr_enb_latent"]),
             })
+    return rows
+
+
+def breadth_accuracy_by_rho_beta(df: pd.DataFrame,
+                                 bins=(0.0, 0.1, 0.25, 0.45, 0.7, 1.0)) -> list[dict]:
+    """rho-stratified accuracy WITHIN each beta level. The rho-dependence of the
+    binary-fed formula's PnL-stream error is conditional on the return-model
+    loading beta (marginalizing over beta mixes the channels and flattens it),
+    so we store the 2-d stratification explicitly."""
+    rows = []
+    for beta, gb in df.groupby("cfg_factor_return_beta"):
+        h = gb.copy()
+        h["rho_bin"] = pd.cut(h["rho_latent"], bins=list(bins), include_lowest=True)
+        for b, g in h.groupby("rho_bin", observed=True):
+            if len(g) == 0:
+                continue
+            rows.append({
+                "beta": float(beta),
+                "rho_bin": str(b),
+                "n": int(len(g)),
+                "mape_post_neff_binary": _mape(g["relerr_neff_post_binary"]),
+                "mape_post_neff_latent": _mape(g["relerr_neff_post_latent"]),
+            })
+    return rows
+
+
+def breadth_accuracy_by_beta(df: pd.DataFrame) -> list[dict]:
+    """Accuracy of the post's N_eff vs the realized PnL effective N, stratified
+    by the return-factor loading beta (``cfg_factor_return_beta``).
+
+    The SIGNS of the binary-fed and latent-fed biases depend on beta (at beta=0
+    the PnL streams are nearly independent and both feedings under-count; at
+    high beta the PnL correlation is strong and the binary feeding over-counts
+    badly). The beta-robust quantity is the binary-minus-latent SPREAD driven by
+    tetrachoric attenuation, which we also store per beta."""
+    rows = []
+    for beta, g in df.groupby("cfg_factor_return_beta"):
+        bias_bin = _bias(g["relerr_neff_post_binary"])
+        bias_lat = _bias(g["relerr_neff_post_latent"])
+        rows.append({
+            "beta": float(beta),
+            "n": int(len(g)),
+            "mape_neff_post_binary": _mape(g["relerr_neff_post_binary"]),
+            "bias_neff_post_binary": bias_bin,
+            "mape_neff_post_latent": _mape(g["relerr_neff_post_latent"]),
+            "bias_neff_post_latent": bias_lat,
+            "mape_enb_meucci_latent": _mape(g["relerr_enb_latent"]),
+            "binary_minus_latent_spread_pp": bias_bin - bias_lat,
+        })
     return rows
 
 
@@ -132,67 +186,75 @@ def binary_latent_gap(df: pd.DataFrame) -> dict:
 # 3. utilization heuristic error
 # --------------------------------------------------------------------------- #
 def utilization_error(df: pd.DataFrame, k: int = 1) -> dict:
-    """Error of naive and post-heuristic P(>=1 active) vs simulated truth, overall
-    and by latent-rho tercile, for ``k`` slots."""
-    pfx = f"util_"
-    sfx = f"_k{k}"
-    abs_h = df[f"{pfx}abs_err_heuristic{sfx}"]
-    abs_n = df[f"{pfx}abs_err_naive{sfx}"]
-    sgn_h = df[f"{pfx}err_heuristic{sfx}"]
+    """Error of naive and BOTH post-heuristic feedings (latent and binary) for
+    P(>=1 active) vs simulated truth, overall and by latent-rho tercile, for
+    ``k`` slots. Which correlation is fed determines whether the heuristic beats
+    the naive independent model at all."""
+    pfx, sfx = "util_", f"_k{k}"
     rho = df[f"{pfx}rho_latent{sfx}"]
+    abs_n = df[f"{pfx}abs_err_naive{sfx}"]
 
     terc = pd.qcut(rho, 3, labels=["low_rho", "mid_rho", "high_rho"], duplicates="drop")
-    by_terc = []
+    by_terc: dict[str, dict] = {}
     for t, g in df.groupby(terc, observed=True):
-        by_terc.append({
+        by_terc[str(t)] = {
             "rho_tercile": str(t),
+            "n": int(len(g)),
             "mean_rho": float(g[f"{pfx}rho_latent{sfx}"].mean()),
-            "mae_heuristic": float(g[f"{pfx}abs_err_heuristic{sfx}"].mean()),
             "mae_naive": float(g[f"{pfx}abs_err_naive{sfx}"].mean()),
-            "bias_heuristic": float(g[f"{pfx}err_heuristic{sfx}"].mean()),
-        })
-    # correlation of |heuristic error| with rho (does it grow with rho?)
-    ok = np.isfinite(abs_h) & np.isfinite(rho)
-    rho_corr, p = stats.spearmanr(rho[ok], abs_h[ok])
-    return {
-        "k_slots": k,
-        "mae_heuristic": float(abs_h.mean()),
-        "mae_naive": float(abs_n.mean()),
-        "bias_heuristic_signed": float(sgn_h.mean()),
-        "heuristic_better_than_naive_rate": float((abs_h < abs_n).mean()),
-        "spearman_abserr_vs_rho": float(rho_corr),
-        "spearman_p": float(p),
-        "by_rho_tercile": by_terc,
-    }
+        }
+
+    out = {"k_slots": k, "mae_naive": float(abs_n.mean())}
+    for variant in ("latent", "binary"):
+        abs_h = df[f"{pfx}abs_err_heuristic_{variant}{sfx}"]
+        sgn_h = df[f"{pfx}err_heuristic_{variant}{sfx}"]
+        ok = np.isfinite(abs_h) & np.isfinite(rho)
+        rho_corr, p = stats.spearmanr(rho[ok], abs_h[ok])
+        out[f"mae_heuristic_{variant}"] = float(abs_h.mean())
+        out[f"bias_heuristic_{variant}_signed"] = float(sgn_h.mean())
+        out[f"heuristic_{variant}_better_than_naive_rate"] = float((abs_h < abs_n).mean())
+        out[f"spearman_abserr_vs_rho_{variant}"] = float(rho_corr)
+        out[f"spearman_p_{variant}"] = float(p)
+        for t, g in df.groupby(terc, observed=True):
+            by_terc[str(t)][f"mae_heuristic_{variant}"] = float(
+                g[f"{pfx}abs_err_heuristic_{variant}{sfx}"].mean())
+            by_terc[str(t)][f"bias_heuristic_{variant}"] = float(
+                g[f"{pfx}err_heuristic_{variant}{sfx}"].mean())
+    out["by_rho_tercile"] = list(by_terc.values())
+    return out
 
 
 def slot_utilization_error(df: pd.DataFrame, k: int = 3) -> dict:
     """Error of the post's analytic slot utilization ``min(N_eff*p, K)/K`` against
-    the simulated ``E[min(active, K)]/K`` for ``k`` slots.
+    the simulated ``E[min(active, K)]/K`` for ``k`` slots, under both feedings.
 
     The post's ``E[active] = N_eff*p`` is wrong by construction: by linearity of
     expectation the true mean number active is ``N*p`` regardless of correlation,
-    so the post systematically under-states demand. With slot capping the effect
-    on utilization is more subtle; we measure it directly."""
+    so the post systematically under-states demand (less severely when fed the
+    attenuated binary correlation, since that gives a larger N_eff). With slot
+    capping the effect on utilization is more subtle; we measure it directly."""
     pfx, sfx = "util_", f"_k{k}"
     util_sim = df[f"{pfx}utilization_sim{sfx}"]
     mean_active_sim = df[f"{pfx}mean_active_sim{sfx}"]
-    mean_active_post = df[f"{pfx}mean_active_post{sfx}"]  # N_eff * p
     mean_active_indep = df[f"{pfx}mean_active_independent{sfx}"]  # N * p (truth)
-    # post utilization estimate: min(N_eff*p, K)/K
-    util_post = np.minimum(mean_active_post, k) / k
-    err = util_post - util_sim
-    return {
+    out = {
         "k_slots": k,
         "mean_util_sim": float(util_sim.mean()),
-        "mean_util_post": float(util_post.mean()),
-        "mae_util_post": float(np.abs(err).mean()),
-        "bias_util_post": float(err.mean()),
-        # the E[active] story (linearity): post N_eff*p vs true N*p vs simulated
-        "mean_active_post_vs_true_ratio": float((mean_active_post / mean_active_indep).mean()),
-        "mae_mean_active_post": float(np.abs(mean_active_post - mean_active_sim).mean()),
-        "mae_mean_active_independent": float(np.abs(mean_active_indep - mean_active_sim).mean()),
+        "mae_mean_active_independent": float(
+            np.abs(mean_active_indep - mean_active_sim).mean()),
     }
+    for variant in ("latent", "binary"):
+        mean_active_post = df[f"{pfx}mean_active_post_{variant}{sfx}"]  # N_eff * p
+        util_post = np.minimum(mean_active_post, k) / k
+        err = util_post - util_sim
+        out[f"mean_util_post_{variant}"] = float(util_post.mean())
+        out[f"mae_util_post_{variant}"] = float(np.abs(err).mean())
+        out[f"bias_util_post_{variant}"] = float(err.mean())
+        out[f"mean_active_post_vs_true_ratio_{variant}"] = float(
+            (mean_active_post / mean_active_indep).mean())
+        out[f"mae_mean_active_post_{variant}"] = float(
+            np.abs(mean_active_post - mean_active_sim).mean())
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -205,6 +267,8 @@ def summarize(df: pd.DataFrame) -> dict:
         "n_heterogeneous": int((df["is_homogeneous"] == 0).sum()),
         "breadth_accuracy": breadth_accuracy(df),
         "breadth_accuracy_by_rho": breadth_accuracy_by_rho(df),
+        "breadth_accuracy_by_rho_beta": breadth_accuracy_by_rho_beta(df),
+        "breadth_accuracy_by_beta": breadth_accuracy_by_beta(df),
         "binary_latent_gap": binary_latent_gap(df),
         "utilization_error_k1": utilization_error(df, k=1),
         "slot_utilization_error_k3": slot_utilization_error(df, k=3),
