@@ -36,7 +36,7 @@ truth.</p>
 generate the data, we know the population correlation, the oracle
 diversification, and the true distribution of simultaneously-active
 signals, and can measure exactly where <a href="#eq:neff"
-data-reference-type="eqref" data-reference="eq:neff">[eq:neff]</a>
+data-reference-type="eqref" data-reference="eq:neff">(neff)</a>
 succeeds and where it fails. Our findings are deliberately mixed: the
 formula is far better than its reputation on one target, far worse on
 another, and the difference is governed by two channels the shortcut
@@ -137,7 +137,7 @@ equicorrelation the variance of the sample mean of <span
 class="math inline">N</span> unit-variance variables is inflated by
 <span class="math inline">1+(N-1)\bar{\rho}</span>, giving the effective
 sample size <a href="#eq:neff" data-reference-type="eqref"
-data-reference="eq:neff">[eq:neff]</a>, the design-effect of survey
+data-reference="eq:neff">(neff)</a>, the design-effect of survey
 sampling <span class="citation" data-cites="kish1965survey">(Kish
 1965)</span>. Two features of trading signals complicate its transplant.
 First, signals are typically <em>binary</em>, and the relevant
@@ -159,7 +159,7 @@ model as ground truth.</p>
 <p>We compare three quantities. The <strong>equicorrelation <span
 class="math inline">N_{\mathrm{eff}}</span></strong> of <a
 href="#eq:neff" data-reference-type="eqref"
-data-reference="eq:neff">[eq:neff]</a>, the object under test, defined
+data-reference="eq:neff">(neff)</a>, the object under test, defined
 for any average correlation <span class="math inline">\bar{\rho}</span>
 in its positive-semidefinite range <span
 class="math inline">\bar{\rho}\ge -1/(N-1)</span> (a constraint the
@@ -207,7 +207,7 @@ class="math inline">\rho</span>), while in the <em>heterogeneous</em>
 case loadings are dispersed and an optional block structure (2–3 sector
 factors) is added, so pairwise correlations are unequal and <a
 href="#eq:neff" data-reference-type="eqref"
-data-reference="eq:neff">[eq:neff]</a>’s single-<span
+data-reference="eq:neff">(neff)</a>’s single-<span
 class="math inline">\bar{\rho}</span> assumption is stressed. Loading
 rows are normalized so every latent driver has exactly unit variance,
 which guarantees the realized activation probability matches the
@@ -318,7 +318,7 @@ class="math inline">32.6\%</span>). A signal-level correlation simply
 does not contain the information (<span
 class="math inline">\beta</span>) that determines PnL co-movement, so no
 feeding of <a href="#eq:neff" data-reference-type="eqref"
-data-reference="eq:neff">[eq:neff]</a> can be unbiased across return
+data-reference="eq:neff">(neff)</a> can be unbiased across return
 regimes.</p>
 <p>Two features <em>are</em> robust across <span
 class="math inline">\beta</span>. First, the ordering: the binary-fed
@@ -357,19 +357,15 @@ variance-reduction effective <span class="math inline">N</span> of the
 PnL streams (<span class="math inline">4{,}000</span> portfolios,
 marginal over the <span class="math inline">\beta</span> grid). MAPE =
 mean absolute percentage error; bias is signed.</caption>
-<thead>
-<tr>
-<th style="text-align: left;"></th>
-<th colspan="2" style="text-align: center;">Overall</th>
-<th colspan="2" style="text-align: center;">Homogeneous</th>
-<th colspan="2" style="text-align: center;">Heterogeneous</th>
-</tr>
-</thead>
 <tbody>
 <tr>
-<td
-style="text-align: left;"><span>2-3</span>(lr)<span>4-5</span>(lr)<span>6-7</span>
-Estimator</td>
+<td style="text-align: left;"></td>
+<td colspan="2" style="text-align: center;">Overall</td>
+<td colspan="2" style="text-align: center;">Homogeneous</td>
+<td colspan="2" style="text-align: center;">Heterogeneous</td>
+</tr>
+<tr>
+<td style="text-align: left;">Estimator</td>
 <td style="text-align: center;">MAPE</td>
 <td style="text-align: center;">bias</td>
 <td style="text-align: center;">MAPE</td>
@@ -429,20 +425,18 @@ tetrachoric-driven, <span class="math inline">\beta</span>-robust
 ordering; its magnitude in percentage points grows with <span
 class="math inline">\beta</span> because the realized breadth in the
 denominator shrinks.</caption>
-<thead>
-<tr>
-<th style="text-align: center;"></th>
-<th colspan="2" style="text-align: center;"><span
-class="math inline">N_{\mathrm{eff}}</span> (binary corr.)</th>
-<th colspan="2" style="text-align: center;"><span
-class="math inline">N_{\mathrm{eff}}</span> (latent corr.)</th>
-<th style="text-align: center;"></th>
-</tr>
-</thead>
 <tbody>
 <tr>
-<td style="text-align: center;"><span>2-3</span>(lr)<span>4-5</span>
-<span class="math inline">\beta</span></td>
+<td style="text-align: center;"></td>
+<td colspan="2" style="text-align: center;"><span
+class="math inline">N_{\mathrm{eff}}</span> (binary corr.)</td>
+<td colspan="2" style="text-align: center;"><span
+class="math inline">N_{\mathrm{eff}}</span> (latent corr.)</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td style="text-align: center;"><span
+class="math inline">\beta</span></td>
 <td style="text-align: center;">MAPE</td>
 <td style="text-align: center;">bias</td>
 <td style="text-align: center;">MAPE</td>
@@ -514,7 +508,7 @@ is exactly why the binary-fed estimate sits above the latent-fed one at
 every <span class="math inline">\beta</span> in Table <a
 href="#tab:beta" data-reference-type="ref"
 data-reference="tab:beta">2</a>. A user of <a href="#eq:neff"
-data-reference-type="eqref" data-reference="eq:neff">[eq:neff]</a> who
+data-reference-type="eqref" data-reference="eq:neff">(neff)</a> who
 measures correlation on the signals themselves—the natural thing to
 do—always claims more diversification than a latent-correlation user,
 and overstates the truth whenever return co-movement is appreciable.</p>
@@ -820,7 +814,7 @@ Embrechts et al. 2002)</span> that a single <span
 class="math inline">\bar{\rho}</span> cannot represent and that would
 further stress <span class="math inline">N_{\mathrm{eff}}</span>. Our
 return model <a href="#eq:returns" data-reference-type="eqref"
-data-reference="eq:returns">[eq:returns]</a> ties PnL co-movement to a
+data-reference="eq:returns">(returns)</a> ties PnL co-movement to a
 single constant <span class="math inline">\beta</span> per portfolio;
 real return loadings vary across instruments and time, and our <span
 class="math inline">\beta</span> grid (<span
