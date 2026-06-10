@@ -1,0 +1,55 @@
+<p>Running one strategy across <span class="math inline">N</span>
+instruments is often assumed to give <span
+class="math inline">N</span>-fold diversification, but correlated
+signals deliver far less. A popular shortcut borrows the equicorrelation
+<em>effective sample size</em> <span class="math inline">\Neff =
+N/(1+(N-1)\rbar)</span> from statistics and uses it both to discount
+diversification and to size the capacity of a slot-limited execution
+orchestrator. We give this shortcut a controlled test. In a simulation
+with known population correlation we generate <span
+class="math inline">N</span> correlated <em>binary</em> trading signals
+from a latent Gaussian model, attach trade returns whose loading <span
+class="math inline">\beta</span> on the common factor is an explicit
+design parameter swept over <span
+class="math inline">\{0,0.3,0.6,0.9\}</span>, and compare <span
+class="math inline">\Neff</span> against two ground truths: the realized
+variance reduction of the equal-weight portfolio and a
+correlated-Bernoulli model of execution capacity. Across <span
+class="math inline">4{,}000</span> simulated portfolios we find: (i) for
+the binary signal streams themselves <span
+class="math inline">\Neff</span> is essentially exact (<span
+class="math inline">0.02\%</span> mean error); (ii) for the <em>PnL</em>
+streams its accuracy—and even the sign of its bias—is set by the return
+model: fed the binary signal correlation, the bias swings from <span
+class="math inline">-56\%</span> at <span
+class="math inline">\beta=0</span> to <span
+class="math inline">+91\%</span> at <span
+class="math inline">\beta=0.9</span> (<span
+class="math inline">+22\%</span> at the central <span
+class="math inline">\beta=0.6</span>). What is robust across <span
+class="math inline">\beta</span> is the <em>feeding gap</em>:
+dichotomization attenuates correlation by roughly half (a tetrachoric
+effect we predict to <span class="math inline">0.018</span> MAE), so the
+binary-fed estimate always claims about <span
+class="math inline">56\%</span> more breadth than the latent-fed one;
+(iii) the capacity heuristic <span
+class="math inline">1-(1-p)^{\Neff}</span> misses a structural fact—the
+expected number of simultaneously active signals is <span
+class="math inline">Np</span> by linearity <em>regardless</em> of
+correlation—and systematically undershoots <span
+class="math inline">P(\ge 1\ \text{active})</span>. Fed the latent
+correlation its error (MAE <span class="math inline">0.21</span>) is
+worse than ignoring correlation altogether (<span
+class="math inline">0.14</span>); fed the binary correlation it improves
+to <span class="math inline">0.11</span> and beats the naive model in
+<span class="math inline">68\%</span> of portfolios. Both feedings bias
+the implied “optimal number of instruments” low (by <span
+class="math inline">4</span>–<span class="math inline">6</span> and
+<span class="math inline">2</span>–<span class="math inline">4</span> at
+our homogeneous design point), though the flat score curve makes the
+realized throughput cost modest (<span class="math inline">\le
+7\%</span>). We conclude that <span class="math inline">\Neff</span> is
+a usable breadth discount only when the fed correlation matches the
+stream one cares about, and that slot capacity should be sized from
+<span class="math inline">Np</span> and the distribution of the active
+count, not from <span class="math inline">\Neff</span>.</p>

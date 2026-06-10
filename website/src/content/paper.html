@@ -1,0 +1,955 @@
+<h1 id="introduction">Introduction</h1>
+<p>A trader who runs the same strategy on <span
+class="math inline">N</span> instruments would like to believe the
+result is <span class="math inline">N</span> roughly-independent bets.
+It is not: the signals fire together, the positions move together, and
+the realized diversification is a fraction of the nominal count <span
+class="citation"
+data-cites="markowitz1952portfolio grinold1989fundamental">(Markowitz
+1952; Grinold 1989)</span>. The practical question is how large that
+fraction is, and whether it can be captured by a formula simple enough
+to use on the desk.</p>
+<p>One such formula circulates widely. Borrowed from the design-effect
+of survey sampling <span class="citation"
+data-cites="kish1965survey">(Kish 1965)</span>, the equicorrelation
+<em>effective sample size</em> <span
+class="math display">\begin{equation}
+N_{\mathrm{eff}}\;=\; \frac{N}{1+(N-1)\bar{\rho}}
+\label{eq:neff}
+\end{equation}</span> discounts <span class="math inline">N</span> by an
+average pairwise correlation <span
+class="math inline">\bar{\rho}</span>. It is attractive because it needs
+only <span class="math inline">N</span> and one number, sidestepping the
+noisy full-covariance estimation that more principled measures require
+<span class="citation"
+data-cites="laloux1999noise ledoit2004honey">(Laloux et al. 1999; Ledoit
+and Wolf 2004)</span>. In practitioner writing it is used for two
+distinct purposes: to estimate how much diversification a basket of
+correlated strategies actually delivers, and—plugged into an
+independent-arrivals formula <span
+class="math inline">1-(1-p)^{N_{\mathrm{eff}}}</span>—to size how busy a
+capacity- or slot-limited execution system will be.<a href="#fn1"
+class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>
+Neither use has, to our knowledge, been validated against ground
+truth.</p>
+<p>We provide that validation in a controlled simulation. Because we
+generate the data, we know the population correlation, the oracle
+diversification, and the true distribution of simultaneously-active
+signals, and can measure exactly where <a href="#eq:neff"
+data-reference-type="eqref" data-reference="eq:neff">[eq:neff]</a>
+succeeds and where it fails. Our findings are deliberately mixed: the
+formula is far better than its reputation on one target, far worse on
+another, and the difference is governed by two channels the shortcut
+ignores—which correlation it is fed, and how strongly returns co-move
+beyond co-activation.</p>
+<h4 id="contributions.">Contributions.</h4>
+<ol>
+<li><p>A reproducible framework that generates <span
+class="math inline">N</span> correlated <em>binary</em> trading signals
+and their PnL from a latent Gaussian model with controllable homogeneous
+or heterogeneous correlation <em>and an explicit return-factor loading
+<span class="math inline">\beta</span></em>, so realized breadth and
+execution capacity are measurable ground truth and the return channel is
+a swept design parameter rather than a hidden constant (Section <a
+href="#sec:framework" data-reference-type="ref"
+data-reference="sec:framework">4</a>).</p></li>
+<li><p>A measurement of <span
+class="math inline">N_{\mathrm{eff}}</span>’s accuracy as a
+diversification discount. For the signal streams themselves it is
+essentially exact (<span class="math inline">0.02\%</span> error). For
+the PnL streams, accuracy and the <em>sign</em> of the bias depend on
+<span class="math inline">\beta</span>; the <span
+class="math inline">\beta</span>-robust feature is the feeding gap
+driven by tetrachoric attenuation, which makes the binary-fed estimate
+claim <span class="math inline">{\sim}56\%</span> more breadth than the
+latent-fed one (Sections <a href="#sec:breadth"
+data-reference-type="ref" data-reference="sec:breadth">5.1</a>–<a
+href="#sec:channel" data-reference-type="ref"
+data-reference="sec:channel">5.3</a>).</p></li>
+<li><p>A clarification that Meucci’s Effective Number of Bets, though
+principled, measures factor breadth rather than equal-weight variance
+reduction and is not a drop-in ground truth for this problem (Section <a
+href="#sec:enb" data-reference-type="ref"
+data-reference="sec:enb">5.4</a>).</p></li>
+<li><p>A precise refutation of the capacity use: the mean number of
+active signals is <span class="math inline">Np</span> by linearity for
+<em>any</em> correlation (the <span
+class="math inline">N_{\mathrm{eff}}\,p</span> load estimate is
+structurally wrong), and the <span class="math inline">P(\ge1)</span>
+heuristic systematically undershoots, with an error whose size—and rank
+relative to a naive independence model—depends on which correlation is
+fed. The implied optimal instrument count is biased low by <span
+class="math inline">2</span>–<span class="math inline">6</span>, at a
+modest (<span class="math inline">\le 7\%</span>) throughput cost
+(Sections <a href="#sec:capacity" data-reference-type="ref"
+data-reference="sec:capacity">5.5</a>–<a href="#sec:optimal"
+data-reference-type="ref"
+data-reference="sec:optimal">5.6</a>).</p></li>
+</ol>
+<h1 id="sec:related">Related work</h1>
+<p>The question of how many genuinely distinct bets a portfolio contains
+is as old as modern portfolio theory. <span class="citation"
+data-cites="markowitz1952portfolio">Markowitz (1952)</span> formalized
+diversification through the covariance structure: portfolio variance
+depends not on the number of holdings but on their co-movement, so the
+naive count of <span class="math inline">N</span> positions overstates
+diversification whenever holdings are correlated. We study the analogous
+overstatement for <span class="math inline">N</span> <em>trading
+signals</em> and ask whether a closed-form correction recovers the
+effective count.</p>
+<p>A literature seeks scalar summaries of diversification. <span
+class="citation" data-cites="meucci2009managing">Meucci (2009)</span>
+proposed the Effective Number of Bets (ENB): rotate the portfolio onto
+its uncorrelated principal portfolios, normalize their risk
+contributions into a diversification distribution, and exponentiate its
+Shannon entropy. The ENB equals <span class="math inline">N</span> when
+risk is spread evenly over <span class="math inline">N</span>
+uncorrelated sources and collapses toward one as risk concentrates. In
+this paper we use the spectral, portfolio-agnostic variant of Meucci’s
+measure—the exponential entropy of the correlation-matrix eigenvalue
+shares—which depends only on the correlation structure, not on a
+particular weight vector. It is correlation-aware and principled, but
+requires the full covariance matrix and an eigendecomposition—and, as
+the random-matrix critique <span class="citation"
+data-cites="laloux1999noise">(Laloux et al. 1999)</span> and shrinkage
+remedy <span class="citation" data-cites="ledoit2004honey">(Ledoit and
+Wolf 2004)</span> stress, that matrix is itself noisily estimated.</p>
+<p>The active-management literature attacks the same problem through
+<em>breadth</em>. <span class="citation"
+data-cites="grinold1989fundamental">Grinold (1989)</span> introduced the
+Fundamental Law, <span
+class="math inline">\mathrm{IR}\approx\mathrm{IC}\cdot\sqrt{BR}</span>,
+with breadth <span class="math inline">BR</span> the number of
+<em>independent</em> bets per period; <span class="citation"
+data-cites="grinold2000active">Grinold and Kahn (2000)</span> develop it
+in detail. Independence is the load-bearing assumption: when signals are
+correlated the raw count overstates breadth. <span class="citation"
+data-cites="clarke2002portfolio">Clarke et al. (2002)</span> generalized
+the law to constrained portfolios via the transfer coefficient, and
+<span class="citation" data-cites="clarke2006fundamental">Clarke et al.
+(2006)</span> extended it to a full covariance matrix, making explicit
+that breadth shrinks and becomes hard to define once signals are
+correlated. These works establish qualitatively that correlation erodes
+effective breadth, but supply no validated closed-form effective count
+for an arbitrary number of binary signals.</p>
+<p>A candidate formula exists in classical statistics: under
+equicorrelation the variance of the sample mean of <span
+class="math inline">N</span> unit-variance variables is inflated by
+<span class="math inline">1+(N-1)\bar{\rho}</span>, giving the effective
+sample size <a href="#eq:neff" data-reference-type="eqref"
+data-reference="eq:neff">[eq:neff]</a>, the design-effect of survey
+sampling <span class="citation" data-cites="kish1965survey">(Kish
+1965)</span>. Two features of trading signals complicate its transplant.
+First, signals are typically <em>binary</em>, and the relevant
+correlation is between Bernoulli indicators, not their latent drivers;
+dichotomizing a bivariate normal attenuates the observed correlation in
+a nonlinear, base-rate-dependent way—the classical tetrachoric problem
+<span class="citation" data-cites="pearson1900tetrachoric">(Pearson
+1900)</span>. Second, dependence is not fully captured by linear
+correlation: stylized facts <span class="citation"
+data-cites="cont2001empirical">(Cont 2001)</span> and copula critiques
+<span class="citation" data-cites="embrechts2002correlation">(Embrechts
+et al. 2002)</span> warn that a single <span
+class="math inline">\bar{\rho}</span> can mislead. A validation must
+therefore be explicit about which correlation it uses and under what
+structure it is asked to hold. We close this gap by simulation, taking
+the realized variance reduction and a correlated-Bernoulli capacity
+model as ground truth.</p>
+<h1 id="sec:measures">Effective-breadth measures</h1>
+<p>We compare three quantities. The <strong>equicorrelation <span
+class="math inline">N_{\mathrm{eff}}</span></strong> of <a
+href="#eq:neff" data-reference-type="eqref"
+data-reference="eq:neff">[eq:neff]</a>, the object under test, defined
+for any average correlation <span class="math inline">\bar{\rho}</span>
+in its positive-semidefinite range <span
+class="math inline">\bar{\rho}\ge -1/(N-1)</span> (a constraint the
+shortcut routinely ignores; we enforce it, though it never binds for our
+<span class="math inline">\rho\ge0</span> designs). Meucci’s
+<strong>Effective Number of Bets</strong>, <span
+class="math display">\begin{equation}
+\mathrm{ENB} = \exp\!\Big(\!-\!\sum_{k=1}^{N} p_k \ln p_k\Big), \qquad
+p_k = \frac{\lambda_k}{\sum_j \lambda_j},
+\end{equation}</span> with <span class="math inline">\lambda_k</span>
+the eigenvalues of the correlation matrix—a principled measure of the
+number of uncorrelated risk <em>factors</em>. And the operational ground
+truth, the <strong>realized effective <span
+class="math inline">N</span></strong>, defined as the variance-reduction
+ratio of the equal-weight portfolio of the <span
+class="math inline">N</span> signal-PnL streams, <span
+class="math display">\begin{equation}
+N^{\star} = \frac{\overline{\operatorname{Var}}(\text{single
+stream})}{\operatorname{Var}(\text{equal-weight portfolio})},
+\end{equation}</span> which for <em>equal-variance</em> equicorrelated
+streams equals <span
+class="math inline">N/(1+(N-1)\bar{\rho}_{\text{PnL}})</span> exactly,
+and is what a trader actually experiences as diversification.</p>
+<h4 id="latent-vs.-binary-correlation.">Latent vs. binary
+correlation.</h4>
+<p>A signal is active when a latent driver <span
+class="math inline">z_{i,t}=\sqrt{\rho}\,F_t+\sqrt{1-\rho}\,\varepsilon_{i,t}</span>
+exceeds a threshold set to give activation probability <span
+class="math inline">p</span>. The correlation of the resulting binary
+indicators is <em>not</em> <span class="math inline">\rho</span>;
+thresholding attenuates it <span class="citation"
+data-cites="pearson1900tetrachoric">(Pearson 1900)</span>. Whether one
+feeds <span class="math inline">N_{\mathrm{eff}}</span> the binary
+signal correlation or the latent correlation therefore changes the
+answer, and the shortcut is silent on which to use. We evaluate both
+feedings throughout.</p>
+<h1 id="sec:framework">Simulation framework</h1>
+<p>Each experiment draws a population of <span
+class="math inline">N</span> signals over <span
+class="math inline">T</span> periods (Figure <a href="#fig:setup"
+data-reference-type="ref" data-reference="fig:setup">1</a>). Latent
+drivers follow a one-factor Gaussian model; in the <em>homogeneous</em>
+case all loadings are equal (true equicorrelation <span
+class="math inline">\rho</span>), while in the <em>heterogeneous</em>
+case loadings are dispersed and an optional block structure (2–3 sector
+factors) is added, so pairwise correlations are unequal and <a
+href="#eq:neff" data-reference-type="eqref"
+data-reference="eq:neff">[eq:neff]</a>’s single-<span
+class="math inline">\bar{\rho}</span> assumption is stressed. Loading
+rows are normalized so every latent driver has exactly unit variance,
+which guarantees the realized activation probability matches the
+configured <span class="math inline">p</span>. Signal <span
+class="math inline">i</span> is active when its latent driver exceeds
+<span class="math inline">\Phi^{-1}(1-p)</span>.</p>
+<h4 id="return-model.">Return model.</h4>
+<p>Each active step of signal <span class="math inline">i</span> earns
+<span class="math display">\begin{equation}
+r_{i,t} \;=\; \mu \;+\; \sigma\big(\beta\,F_t +
+\sqrt{1-\beta^2}\,\eta_{i,t}\big),
+\label{eq:returns}
+\end{equation}</span> with edge <span
+class="math inline">\mu=0.05</span>, volatility <span
+class="math inline">\sigma=1</span>, <span
+class="math inline">F_t</span> the <em>same</em> common factor that
+drives activations, and <span class="math inline">\eta_{i,t}</span>
+idiosyncratic noise; flat steps earn zero. The loading <span
+class="math inline">\beta</span> controls how much of the co-activation
+structure passes through to PnL correlation: at <span
+class="math inline">\beta=0</span> the PnL streams are correlated only
+through co-activation of the common edge term, at <span
+class="math inline">\beta=0.9</span> they co-move strongly. Because the
+validation target—realized PnL variance reduction—depends directly on
+<span class="math inline">\beta</span>, we treat it as an explicit
+design parameter and sweep it, rather than fixing it implicitly.</p>
+<h4 id="sampled-design.">Sampled design.</h4>
+<p>The main batch draws, independently per experiment: <span
+class="math inline">N\in\{5,8,10,15,20,30\}</span>, <span
+class="math inline">p\in\{0.05,0.10,0.15,0.25,0.45\}</span>, <span
+class="math inline">\rho\sim\mathrm{Uniform}[0,0.7]</span> (clipped to
+the PSD-valid range, which never binds for <span
+class="math inline">\rho\ge0</span>), <span
+class="math inline">\beta\in\{0,0.3,0.6,0.9\}</span>, and homogeneous
+vs. heterogeneous structure with equal probability; heterogeneous
+configs draw a loading dispersion in <span
+class="math inline">[0.1,0.45]</span> and, with probability <span
+class="math inline">2/3</span>, 2–3 blocks carrying up to <span
+class="math inline">25\%</span> of variance. We run <span
+class="math inline">4{,}000</span> portfolios of <span
+class="math inline">T=30{,}000</span> periods each (<span
+class="math inline">1{,}995</span> homogeneous, <span
+class="math inline">2{,}005</span> heterogeneous; about <span
+class="math inline">1{,}000</span> per <span
+class="math inline">\beta</span> level). The <span
+class="math inline">\rho</span>-sweep of Section <a href="#sec:capacity"
+data-reference-type="ref" data-reference="sec:capacity">5.5</a> holds
+<span class="math inline">N=10</span>, <span
+class="math inline">p=0.1</span> fixed with <span
+class="math inline">T=120{,}000</span> and five repetitions per <span
+class="math inline">\rho</span>; the optimal-<span
+class="math inline">N</span> exercise of Section <a href="#sec:optimal"
+data-reference-type="ref" data-reference="sec:optimal">5.6</a> uses
+<span class="math inline">T=60{,}000</span>, three repetitions per
+candidate <span class="math inline">N</span>, and five independent seeds
+per setting. All runs are deterministic given the released seeds. For
+execution we add an orchestrator with <span class="math inline">K</span>
+slots: at each step at most <span class="math inline">K</span> of the
+active signals can be filled.</p>
+<p>Ground truth is read off the simulation: the realized effective <span
+class="math inline">N</span> above; the empirical distribution of the
+number of simultaneously active signals; and the slot utilization <span
+class="math inline">\mathbb{E}[\min(\text{active},K)]/K</span>. We then
+ask how well the <span class="math inline">N_{\mathrm{eff}}</span>-based
+predictions match.</p>
+<figure id="fig:setup" data-latex-placement="t">
+<img src="/figures/fig_setup.svg" />
+<figcaption>The generative model. (a) Correlated latent Gaussian drivers
+and the activation threshold <span
+class="math inline">\Phi^{-1}(1-p)</span>. (b) The resulting binary
+activations cluster in time. (c) Dichotomization attenuates correlation:
+the binary (phi) correlation lies well below the latent correlation that
+produced it; the tetrachoric curve predicts the
+attenuation.</figcaption>
+</figure>
+<h1 id="results">Results</h1>
+<h2 id="sec:breadth">As a PnL diversification discount, <span
+class="math inline">N_{\mathrm{eff}}</span>’s bias is set by the return
+channel</h2>
+<p>Figure <a href="#fig:breadth" data-reference-type="ref"
+data-reference="fig:breadth">2</a> and Tables <a href="#tab:breadth"
+data-reference-type="ref" data-reference="tab:breadth">1</a>–<a
+href="#tab:beta" data-reference-type="ref"
+data-reference="tab:beta">2</a> report how well <span
+class="math inline">N_{\mathrm{eff}}</span> predicts the realized PnL
+effective <span class="math inline">N</span>. Marginally over the <span
+class="math inline">\beta</span> grid the binary-fed formula shows a
+mean absolute error of <span class="math inline">51.7\%</span> (bias
+<span class="math inline">+4.1\%</span>) and the latent-fed one <span
+class="math inline">49.3\%</span> (bias <span
+class="math inline">-28.4\%</span>)—but the marginal numbers conceal the
+real structure, which is the <span
+class="math inline">\beta</span>-dependence in Table <a href="#tab:beta"
+data-reference-type="ref" data-reference="tab:beta">2</a>. At <span
+class="math inline">\beta=0</span>, where returns share no factor beyond
+co-activation, realized PnL breadth stays close to <span
+class="math inline">N</span> and <em>both</em> feedings under-count
+badly (<span class="math inline">-56\%</span> binary-fed, <span
+class="math inline">-69\%</span> latent-fed). At <span
+class="math inline">\beta=0.9</span> both over-count (<span
+class="math inline">+91\%</span> and <span
+class="math inline">+30\%</span>). The sign of the bias flips between:
+at the central <span class="math inline">\beta=0.6</span> the binary
+feeding over-counts (<span class="math inline">+21.7\%</span>, MAPE
+<span class="math inline">25.8\%</span>) while the latent feeding
+under-counts (<span class="math inline">-16.1\%</span>, MAPE <span
+class="math inline">32.6\%</span>). A signal-level correlation simply
+does not contain the information (<span
+class="math inline">\beta</span>) that determines PnL co-movement, so no
+feeding of <a href="#eq:neff" data-reference-type="eqref"
+data-reference="eq:neff">[eq:neff]</a> can be unbiased across return
+regimes.</p>
+<p>Two features <em>are</em> robust across <span
+class="math inline">\beta</span>. First, the ordering: the binary-fed
+estimate always claims more breadth than the latent-fed one, by a
+construction-driven <span class="math inline">{\sim}56\%</span> (next
+subsection), with the bias spread between the two feedings widening from
+<span class="math inline">12.6</span>pp at <span
+class="math inline">\beta=0</span> to <span
+class="math inline">61.4</span>pp at <span
+class="math inline">\beta=0.9</span> as the realized breadth it is
+measured against shrinks. Second, structure barely matters: accuracy
+degrades little from homogeneous (<span
+class="math inline">51.8\%</span>) to heterogeneous (<span
+class="math inline">51.5\%</span>) correlation—the binary attenuation
+and the return channel, not correlation heterogeneity, dominate the
+error.</p>
+<figure id="fig:breadth" data-latex-placement="t">
+<img src="/figures/fig_breadth_accuracy.svg" />
+<figcaption>(a) The shortcut’s <span
+class="math inline">N_{\mathrm{eff}}</span> (fed binary correlation)
+versus the realized PnL effective <span class="math inline">N</span>,
+all <span class="math inline">4{,}000</span> portfolios shown (axes span
+the full data range). The vertical bands near <span
+class="math inline">N^{\star}\!\approx\!N</span> are low-<span
+class="math inline">\beta</span> portfolios whose PnL streams are nearly
+independent. (b) Mean absolute percentage error by estimator and
+structure, marginal over the <span class="math inline">\beta</span>
+grid. Meucci’s ENB measures a different quantity and diverges far more
+(Section <a href="#sec:enb" data-reference-type="ref"
+data-reference="sec:enb">5.4</a>).</figcaption>
+</figure>
+<div id="tab:breadth">
+<table>
+<caption>Accuracy of effective-breadth estimators against the realized
+variance-reduction effective <span class="math inline">N</span> of the
+PnL streams (<span class="math inline">4{,}000</span> portfolios,
+marginal over the <span class="math inline">\beta</span> grid). MAPE =
+mean absolute percentage error; bias is signed.</caption>
+<thead>
+<tr>
+<th style="text-align: left;"></th>
+<th colspan="2" style="text-align: center;">Overall</th>
+<th colspan="2" style="text-align: center;">Homogeneous</th>
+<th colspan="2" style="text-align: center;">Heterogeneous</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td
+style="text-align: left;"><span>2-3</span>(lr)<span>4-5</span>(lr)<span>6-7</span>
+Estimator</td>
+<td style="text-align: center;">MAPE</td>
+<td style="text-align: center;">bias</td>
+<td style="text-align: center;">MAPE</td>
+<td style="text-align: center;">bias</td>
+<td style="text-align: center;">MAPE</td>
+<td style="text-align: center;">bias</td>
+</tr>
+<tr>
+<td style="text-align: left;"><span
+class="math inline">N_{\mathrm{eff}}</span> (binary corr.)</td>
+<td style="text-align: center;">51.7%</td>
+<td style="text-align: center;"><span
+class="math inline">+4.1\%</span></td>
+<td style="text-align: center;">51.8%</td>
+<td style="text-align: center;"><span
+class="math inline">+2.1\%</span></td>
+<td style="text-align: center;">51.5%</td>
+<td style="text-align: center;"><span
+class="math inline">+6.1\%</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span
+class="math inline">N_{\mathrm{eff}}</span> (latent corr.)</td>
+<td style="text-align: center;">49.3%</td>
+<td style="text-align: center;"><span
+class="math inline">-28.4\%</span></td>
+<td style="text-align: center;">49.5%</td>
+<td style="text-align: center;"><span
+class="math inline">-31.4\%</span></td>
+<td style="text-align: center;">49.0%</td>
+<td style="text-align: center;"><span
+class="math inline">-25.5\%</span></td>
+</tr>
+<tr>
+<td style="text-align: left;">Meucci ENB (latent)</td>
+<td style="text-align: center;">103.9%</td>
+<td style="text-align: center;"><span
+class="math inline">+85.1\%</span></td>
+<td style="text-align: center;">108.6%</td>
+<td style="text-align: center;"><span
+class="math inline">+89.4\%</span></td>
+<td style="text-align: center;">99.2%</td>
+<td style="text-align: center;"><span
+class="math inline">+80.8\%</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="tab:beta">
+<table>
+<caption>The return-factor loading <span
+class="math inline">\beta</span> sets the size <em>and sign</em> of
+<span class="math inline">N_{\mathrm{eff}}</span>’s bias against
+realized PnL breadth (<span class="math inline">{\sim}1{,}000</span>
+portfolios per row). The feeding gap (binary minus latent bias) is the
+tetrachoric-driven, <span class="math inline">\beta</span>-robust
+ordering; its magnitude in percentage points grows with <span
+class="math inline">\beta</span> because the realized breadth in the
+denominator shrinks.</caption>
+<thead>
+<tr>
+<th style="text-align: center;"></th>
+<th colspan="2" style="text-align: center;"><span
+class="math inline">N_{\mathrm{eff}}</span> (binary corr.)</th>
+<th colspan="2" style="text-align: center;"><span
+class="math inline">N_{\mathrm{eff}}</span> (latent corr.)</th>
+<th style="text-align: center;"></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;"><span>2-3</span>(lr)<span>4-5</span>
+<span class="math inline">\beta</span></td>
+<td style="text-align: center;">MAPE</td>
+<td style="text-align: center;">bias</td>
+<td style="text-align: center;">MAPE</td>
+<td style="text-align: center;">bias</td>
+<td style="text-align: center;">spread (pp)</td>
+</tr>
+<tr>
+<td style="text-align: center;">0.0</td>
+<td style="text-align: center;">56.4%</td>
+<td style="text-align: center;"><span
+class="math inline">-56.4\%</span></td>
+<td style="text-align: center;">69.0%</td>
+<td style="text-align: center;"><span
+class="math inline">-69.0\%</span></td>
+<td style="text-align: center;">12.6</td>
+</tr>
+<tr>
+<td style="text-align: center;">0.3</td>
+<td style="text-align: center;">35.7%</td>
+<td style="text-align: center;"><span
+class="math inline">-33.7\%</span></td>
+<td style="text-align: center;">55.3%</td>
+<td style="text-align: center;"><span
+class="math inline">-54.3\%</span></td>
+<td style="text-align: center;">20.6</td>
+</tr>
+<tr>
+<td style="text-align: center;">0.6</td>
+<td style="text-align: center;">25.8%</td>
+<td style="text-align: center;"><span
+class="math inline">+21.7\%</span></td>
+<td style="text-align: center;">32.6%</td>
+<td style="text-align: center;"><span
+class="math inline">-16.1\%</span></td>
+<td style="text-align: center;">37.7</td>
+</tr>
+<tr>
+<td style="text-align: center;">0.9</td>
+<td style="text-align: center;">91.4%</td>
+<td style="text-align: center;"><span
+class="math inline">+91.4\%</span></td>
+<td style="text-align: center;">39.3%</td>
+<td style="text-align: center;"><span
+class="math inline">+30.0\%</span></td>
+<td style="text-align: center;">61.4</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="sec:tetrachoric">The binary/latent distinction is large and
+predictable</h2>
+<p>The reason <em>which</em> correlation one feeds matters is that
+dichotomizing attenuates it. Across our portfolios the mean latent
+correlation of <span class="math inline">0.324</span> becomes a mean
+binary signal correlation of <span class="math inline">0.176</span>—a
+median per-portfolio attenuation ratio of <span
+class="math inline">0.52</span>, with the binary correlation below the
+latent one in <span class="math inline">98\%</span> of cases. The
+classical tetrachoric relation predicts the binary correlation from the
+latent one and the activation rate to a mean absolute error of just
+<span class="math inline">0.018</span>. The practical consequence is
+direct: feeding <span class="math inline">N_{\mathrm{eff}}</span> the
+(smaller) binary correlation instead of the latent one inflates the
+estimated effective count by <span class="math inline">+56\%</span> on
+average (<span class="math inline">5.19</span> vs. <span
+class="math inline">3.43</span>). This inflation depends only on the
+activation geometry, not on <span class="math inline">\beta</span>—which
+is exactly why the binary-fed estimate sits above the latent-fed one at
+every <span class="math inline">\beta</span> in Table <a
+href="#tab:beta" data-reference-type="ref"
+data-reference="tab:beta">2</a>. A user of <a href="#eq:neff"
+data-reference-type="eqref" data-reference="eq:neff">[eq:neff]</a> who
+measures correlation on the signals themselves—the natural thing to
+do—always claims more diversification than a latent-correlation user,
+and overstates the truth whenever return co-movement is appreciable.</p>
+<h2 id="sec:channel">The formula is near-exact for the signal streams;
+the PnL error is the return channel</h2>
+<p>Two further measurements locate the error. First, judged against the
+variance reduction of the <em>binary signal streams themselves</em>, the
+binary-fed <span class="math inline">N_{\mathrm{eff}}</span> is
+essentially exact: <span class="math inline">0.022\%</span> MAPE across
+all <span class="math inline">4{,}000</span> portfolios, heterogeneous
+and block structures included. This is close to an algebraic
+identity—for equal-variance streams the equal-weight variance-reduction
+ratio depends on the correlation matrix only through its mean—so it
+should be read as a consistency check, but a useful one: it rules out
+any contribution of correlation <em>heterogeneity</em> per se to the
+PnL-stream error. The entire <span class="math inline">{\sim}50\%</span>
+PnL error of Table <a href="#tab:breadth" data-reference-type="ref"
+data-reference="tab:breadth">1</a> comes from the mismatch between
+signal-level and PnL-level correlation, i.e. from tetrachoric
+attenuation and the return channel <span
+class="math inline">\beta</span>, not from the equicorrelation
+algebra.</p>
+<p>Second, the error is concentrated in the weak-correlation regime. At
+the central <span class="math inline">\beta=0.6</span>, the binary-fed
+MAPE falls from <span class="math inline">62\%</span> in the
+lowest-<span class="math inline">\rho</span> bin (<span
+class="math inline">\rho\le0.1</span>) to <span
+class="math inline">9\%</span> for <span
+class="math inline">\rho\in(0.45,0.7]</span>: when correlation is strong
+it dominates both the signal and the PnL structure, and the input
+mismatch matters less. (The direction of this <span
+class="math inline">\rho</span>-dependence is itself <span
+class="math inline">\beta</span>-conditional: at <span
+class="math inline">\beta=0</span>, where realized PnL breadth stays
+near <span class="math inline">N</span>, the formula’s aggressive
+discounts make the error <em>grow</em> with <span
+class="math inline">\rho</span> instead, from <span
+class="math inline">23\%</span> to <span
+class="math inline">76\%</span>.) The uncomfortable reading for
+practice: in the regime where a correlation correction seems most
+affordable—weak-to-moderate measured correlation—the shortcut is least
+reliable, and where it is most accurate the correction is largest.</p>
+<h2 id="sec:enb">Meucci’s ENB answers a different question</h2>
+<p>It is tempting to treat Meucci’s ENB as the “true” effective number
+and judge <span class="math inline">N_{\mathrm{eff}}</span> against it.
+Our results caution against this. The ENB diverges from the realized
+equal-weight variance reduction by <span
+class="math inline">104\%</span> (computed on latent correlations) to
+<span class="math inline">120\%</span> (on return correlations), far
+more than <span class="math inline">N_{\mathrm{eff}}</span> does
+(Table <a href="#tab:breadth" data-reference-type="ref"
+data-reference="tab:breadth">1</a>). This is not a failure of the ENB:
+it faithfully measures the number of uncorrelated risk <em>factors</em>
+(the entropy of the eigenvalue spectrum), which is a different quantity
+from the variance reduction obtained by a specific equal-weight
+combination. The lesson is that “effective number” is not one quantity,
+and a capacity or diversification claim must name the operational
+target. For the equal-weight signal basket that motivates the shortcut,
+the variance-reduction <span class="math inline">N^{\star}</span> is the
+relevant ground truth, and <span
+class="math inline">N_{\mathrm{eff}}</span>—for all its roughness on PnL
+streams—is far closer to it than the spectral ENB.</p>
+<h2 id="sec:capacity">As a capacity model: the mean load is structurally
+wrong, and the <span class="math inline">P(\ge1)</span> error depends on
+the feeding</h2>
+<p>The second use of <span class="math inline">N_{\mathrm{eff}}</span>
+is to size execution capacity via <span
+class="math inline">1-(1-p)^{N_{\mathrm{eff}}}</span> and <span
+class="math inline">\mathbb{E}[\text{active}]=N_{\mathrm{eff}}\,p</span>.
+The mean-load identity is wrong by construction: by linearity of
+expectation the mean number of simultaneously active signals is <span
+class="math inline">Np</span> for <em>any</em> correlation
+structure—correlation changes the <em>variance</em> of the active count,
+not its mean. Empirically, <span class="math inline">Np</span> predicts
+the simulated mean active count to a MAE of <span
+class="math inline">0.011</span> (sampling noise), whereas <span
+class="math inline">N_{\mathrm{eff}}\,p</span> is off by <span
+class="math inline">2.13</span> latent-fed (recovering <span
+class="math inline">0.31\times</span> the true load) and <span
+class="math inline">1.87</span> binary-fed (<span
+class="math inline">0.44\times</span>; Table <a href="#tab:capacity"
+data-reference-type="ref" data-reference="tab:capacity">3</a>).</p>
+<p>The <span class="math inline">P(\ge1\ \text{active})</span> heuristic
+is wrong more subtly: clustering does reduce the union probability, but
+less than the heuristic claims, so it systematically undershoots—and by
+how much depends on which correlation is fed. Latent-fed, the MAE is
+<span class="math inline">0.209</span> (bias <span
+class="math inline">-0.209</span>), worse than even the naive
+independent-<span class="math inline">N</span> model (<span
+class="math inline">0.137</span>); it beats the naive model in only
+<span class="math inline">20\%</span> of portfolios. Binary-fed—the
+input a practitioner measuring the signals would actually use—the
+attenuated correlation yields a larger <span
+class="math inline">N_{\mathrm{eff}}</span> and a prediction much closer
+to the truth: MAE <span class="math inline">0.105</span>, beating the
+naive model in <span class="math inline">68\%</span> of portfolios. The
+undershoot is structural in both cases, but the common practice of
+quoting the latent-fed numbers alone overstates the indictment.</p>
+<p>The <span class="math inline">\rho</span>-dependence must also be
+stated precisely. The <em>absolute error</em> of both feedings rises
+with <span class="math inline">\bar{\rho}</span> in the main batch
+(Spearman rank correlation <span class="math inline">0.49</span>
+latent-fed and <span class="math inline">0.65</span> binary-fed, both
+<span class="math inline">p&lt;10^{-200}</span>), but the naive model’s
+error rises faster. In the controlled sweep (<span
+class="math inline">N=10</span>, <span class="math inline">p=0.1</span>;
+Figure <a href="#fig:util" data-reference-type="ref"
+data-reference="fig:util">3</a>) the latent-fed error peaks near <span
+class="math inline">\rho\approx0.3</span> and <em>crosses below the
+naive error at <span class="math inline">\rho\approx0.5</span></em>: at
+high correlation the heuristic beats ignoring correlation, despite its
+bias. The binary-fed error sits below the naive error for all <span
+class="math inline">\rho\ge0.1</span>. By <span
+class="math inline">\bar{\rho}</span>-tercile of the main batch, the
+latent-fed / binary-fed / naive MAEs are <span
+class="math inline">0.13/0.04/0.04</span> (low), <span
+class="math inline">0.25/0.12/0.13</span> (mid), and <span
+class="math inline">0.25/0.15/0.24</span> (high). With three slots, true
+utilization is <span class="math inline">0.491</span>; the heuristic
+predicts <span class="math inline">0.226</span> latent-fed and <span
+class="math inline">0.306</span> binary-fed. The heuristic conflates a
+real effect (correlation makes the active count <em>lumpier</em>, so a
+fixed slot budget is sometimes overwhelmed and often idle) with a fall
+in the <em>mean</em> load, which does not occur.</p>
+<div id="tab:capacity">
+<table>
+<caption>Execution-capacity predictions vs. simulation under both
+feedings of <span class="math inline">N_{\mathrm{eff}}</span>. The
+reference column gives the true <span class="math inline">Np</span> for
+the mean-load rows and the naive independent model <span
+class="math inline">1-(1-p)^N</span> for the <span
+class="math inline">P(\ge1)</span> row.</caption>
+<thead>
+<tr>
+<th style="text-align: left;">Quantity</th>
+<th style="text-align: center;"><span
+class="math inline">N_{\mathrm{eff}}</span> latent-fed</th>
+<th style="text-align: center;"><span
+class="math inline">N_{\mathrm{eff}}</span> binary-fed</th>
+<th style="text-align: center;">reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Mean active count, MAE</td>
+<td style="text-align: center;">2.13</td>
+<td style="text-align: center;">1.87</td>
+<td style="text-align: center;">0.011  (truth <span
+class="math inline">Np</span>)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Mean active count, ratio to truth</td>
+<td style="text-align: center;"><span
+class="math inline">0.31\times</span></td>
+<td style="text-align: center;"><span
+class="math inline">0.44\times</span></td>
+<td style="text-align: center;"><span
+class="math inline">1.00\times</span>  (truth <span
+class="math inline">Np</span>)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="math inline">P(\ge1)</span>,
+<span class="math inline">K{=}1</span>, MAE</td>
+<td style="text-align: center;">0.209</td>
+<td style="text-align: center;">0.105</td>
+<td style="text-align: center;">0.137  (naive)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Slot utilization <span
+class="math inline">K{=}3</span> (sim <span
+class="math inline">0.491</span>)</td>
+<td style="text-align: center;">0.226</td>
+<td style="text-align: center;">0.306</td>
+<td style="text-align: center;">—</td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure id="fig:util" data-latex-placement="t">
+<img src="/figures/fig_utilization.svg" />
+<figcaption>Execution-capacity error of <span
+class="math inline">1-(1-p)^{N_{\mathrm{eff}}}</span> (<span
+class="math inline">N=10</span>, <span class="math inline">p=0.1</span>,
+five repetitions per <span class="math inline">\rho</span>). (a) Both
+feedings undershoot the simulated <span class="math inline">P(\ge1\
+\text{active})</span>; the binary-fed prediction lies between the
+latent-fed one and the naive model. (b) Absolute errors: the latent-fed
+error peaks near <span class="math inline">\rho\approx0.3</span> and
+crosses <em>below</em> the naive model’s error at <span
+class="math inline">\rho\approx0.5</span>—at high correlation the
+heuristic beats ignoring correlation —while the binary-fed error is
+below the naive error for all <span
+class="math inline">\rho\ge0.1</span>. The error does not grow
+monotonically with <span class="math inline">\rho</span>; what grows
+fastest is the naive model’s error.</figcaption>
+</figure>
+<h2 id="sec:optimal">The implied “optimal number of pairs” is biased
+low—at a modest cost</h2>
+<p>Putting the pieces together, a common application chooses the number
+of instruments <span class="math inline">N</span> that maximizes
+throughput under a slot budget and a decaying per-instrument edge.
+Because the <span class="math inline">N_{\mathrm{eff}}</span> capacity
+model undershoots fill rates, it stops adding instruments too early.
+Under the homogeneous design point (one slot, <span
+class="math inline">p=0.15</span>, <span
+class="math inline">\rho=0.3</span>, decaying edge), across five
+independent seeds the simulated optimum is <span
+class="math inline">N^{\star}_{\text{sim}}=11</span>–<span
+class="math inline">13</span> (median <span
+class="math inline">12</span>), while the latent-fed heuristic
+recommends <span class="math inline">N=7</span> in every seed (gap <span
+class="math inline">-4</span> to <span class="math inline">-6</span>)
+and the binary-fed variant <span class="math inline">N=9</span>–<span
+class="math inline">10</span> (gap <span class="math inline">-2</span>
+to <span class="math inline">-4</span>). Under a genuinely heterogeneous
+design (dispersed loadings, three blocks), the simulated optimum is
+<span class="math inline">10</span>–<span class="math inline">15</span>
+(median <span class="math inline">13</span>) against latent-fed
+recommendations of <span class="math inline">7</span>–<span
+class="math inline">13</span> (gap <span class="math inline">-7</span>
+to <span class="math inline">0</span>) and binary-fed <span
+class="math inline">8</span>–<span class="math inline">15</span> (gap
+<span class="math inline">-5</span> to <span
+class="math inline">0</span>).</p>
+<p>Two qualifications temper the headline. First, the simulated optimum
+itself moves by <span class="math inline">\pm2</span> across seeds, so
+single-seed gaps (including the 12-vs-13 homogeneous-vs-heterogeneous
+contrast in an earlier version of this experiment) are partly seed
+noise; we therefore report ranges. Second, the score curve is flat near
+its maximum (Figure <a href="#fig:optn" data-reference-type="ref"
+data-reference="fig:optn">4</a>b): trading at the latent-fed
+recommendation forfeits on average only <span
+class="math inline">6.9\%</span> (homogeneous) and <span
+class="math inline">5.1\%</span> (heterogeneous) of attainable
+throughput, and the binary-fed recommendation only <span
+class="math inline">1.7\%</span> and <span
+class="math inline">1.1\%</span>. The heuristic stops early, but the
+cliff it stops before is shallow. A desk following the formula
+under-deploys, mildly.</p>
+<figure id="fig:optn" data-latex-placement="t">
+<img src="/figures/fig_optimal_n.svg" style="width:85.0%" />
+<figcaption>Throughput vs. number of instruments under a slot budget and
+decaying edge (homogeneous design, representative seed). The latent-fed
+heuristic’s score peaks at <span class="math inline">N\!=\!7</span> and
+the binary-fed at <span class="math inline">N\!=\!9</span>, vs. the
+simulated optimum <span class="math inline">N\!=\!11</span> in this seed
+(median <span class="math inline">12</span>, range <span
+class="math inline">11</span>–<span class="math inline">13</span> across
+five seeds). The simulated score curve is flat near its maximum, so the
+throughput cost of the early stop is <span
+class="math inline">{\sim}7\%</span> (latent-fed) and <span
+class="math inline">{\sim}2\%</span> (binary-fed).</figcaption>
+</figure>
+<h1 id="discussion">Discussion</h1>
+<p>The shortcut <span
+class="math inline">N_{\mathrm{eff}}=N/(1+(N-1)\bar{\rho})</span> should
+be split into its two uses, and each verdict must name the correlation
+being fed.</p>
+<p>As a <em>diversification discount</em> for the signal streams
+themselves it is essentially exact, and as a PnL discount it is rough at
+best: its bias is set by the return-factor loading <span
+class="math inline">\beta</span>, which no signal-level correlation
+contains. Neither feeding is reliably unbiased—the binary-fed version’s
+near-zero marginal bias (<span class="math inline">+4\%</span>) is an
+artifact of opposite-sign errors cancelling across return regimes
+(Table <a href="#tab:beta" data-reference-type="ref"
+data-reference="tab:beta">2</a>). The defensible default is the
+<em>latent</em> (or return) correlation, read as a conservative
+discount: in our grid it under-counts breadth everywhere except the
+extreme <span class="math inline">\beta=0.9</span> corner, and
+under-counting is the safe direction for risk. Feeding the binary signal
+correlation claims <span class="math inline">{\sim}56\%</span> more
+breadth by construction and overstates true diversification precisely
+when return co-movement is strong—the dangerous direction. Either way
+the result should be judged against equal-weight variance reduction, not
+the spectral ENB, which measures factor breadth.</p>
+<p>As a <em>capacity model</em> the verdict is harsher but should be
+precise rather than blanket. The mean-load identity <span
+class="math inline">\mathbb{E}[\text{active}]=N_{\mathrm{eff}}\,p</span>
+is simply wrong: the truth is <span class="math inline">Np</span>
+irrespective of correlation, and the relevant effect of correlation is
+on the <em>dispersion</em> of the load, which a correlated-Bernoulli (or
+directly simulated) model captures and <span
+class="math inline">1-(1-p)^{N_{\mathrm{eff}}}</span> does not. The
+<span class="math inline">P(\ge1)</span> heuristic undershoots
+systematically at low-to-mid <span
+class="math inline">\bar{\rho}</span>, and its quality depends on the
+feeding: latent-fed it is worse than assuming independence; binary-fed
+it is better than independence in two out of three portfolios, and its
+optimal-<span class="math inline">N</span> recommendation costs only
+<span class="math inline">{\sim}1</span>–<span
+class="math inline">2\%</span> of throughput. If the heuristic is used
+at all for fill estimates, it should be fed the binary correlation; load
+and slot budgets should be sized from <span
+class="math inline">Np</span> and the distribution of the active
+count.</p>
+<h1 id="limitations">Limitations</h1>
+<p>Our dependence is Gaussian-copula with one factor plus optional
+blocks; real signals exhibit tail co-movement and regime-dependent
+correlation <span class="citation"
+data-cites="cont2001empirical embrechts2002correlation">(Cont 2001;
+Embrechts et al. 2002)</span> that a single <span
+class="math inline">\bar{\rho}</span> cannot represent and that would
+further stress <span class="math inline">N_{\mathrm{eff}}</span>. Our
+return model <a href="#eq:returns" data-reference-type="eqref"
+data-reference="eq:returns">[eq:returns]</a> ties PnL co-movement to a
+single constant <span class="math inline">\beta</span> per portfolio;
+real return loadings vary across instruments and time, and our <span
+class="math inline">\beta</span> grid (<span
+class="math inline">0</span>–<span class="math inline">0.9</span>),
+while spanning weak to strong co-movement, is itself a modeling choice.
+We study equal-weight baskets and a simple slot orchestrator;
+capacity-aware weighting, queueing, and priority among signals are out
+of scope. Activation is a fixed-threshold binary; graded position sizing
+would change the tetrachoric attenuation. Finally we model no
+transaction costs, and our “edge decay” in the optimal-<span
+class="math inline">N</span> exercise is a stylized assumption, not an
+empirical estimate. None of these affects the central structural
+result—<span
+class="math inline">\mathbb{E}[\text{active}]=Np</span>—which is
+exact.</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>We tested a popular effective-number shortcut for portfolios of
+correlated trading signals against simulated ground truth. As a
+diversification discount it is essentially exact for the binary signal
+streams themselves, but for PnL streams its accuracy—including the sign
+of its bias—depends on how strongly returns co-move beyond
+co-activation, a quantity (<span class="math inline">\beta</span>) that
+no signal-level correlation reveals; the robust, predictable effect is
+tetrachoric attenuation, which makes any binary-fed estimate claim <span
+class="math inline">{\sim}56\%</span> more breadth than its latent-fed
+counterpart. As a model of execution capacity its mean-load arithmetic
+is structurally wrong—the mean load is the correlation-free <span
+class="math inline">Np</span>—and its <span
+class="math inline">P(\ge1)</span> estimate undershoots, badly when fed
+the latent correlation (worse than assuming independence) and tolerably
+when fed the binary correlation, biasing the implied optimal instrument
+count low by <span class="math inline">2</span>–<span
+class="math inline">6</span> at a <span
+class="math inline">1</span>–<span class="math inline">7\%</span>
+throughput cost. Use <span class="math inline">N_{\mathrm{eff}}</span>
+as a conservative breadth discount fed the latent or return correlation;
+size slot budgets from <span class="math inline">Np</span> and the
+distribution of the active count, not from <span
+class="math inline">N_{\mathrm{eff}}</span>.</p>
+<h4 id="reproducibility.">Reproducibility.</h4>
+<p>All experiments are deterministic given the released seeds; the
+script <code>run_all.py</code> regenerates every number and figure, and
+<code>scripts/check_paper_numbers.py</code> verifies that every number
+quoted in this paper matches the generated results. The generative
+model, the breadth and capacity measures, and the analysis are provided
+as an open-source package.</p>
+<h1 id="references">References</h1><div id="refs" class="references csl-bib-body hanging-indent"
+role="list">
+<div id="ref-clarke2002portfolio" class="csl-entry" role="listitem">
+Clarke, Roger, Harindra de Silva, and Steven Thorley. 2002.
+<span>“Portfolio Constraints and the Fundamental Law of Active
+Management.”</span> <em>Financial Analysts Journal</em> 58 (5): 48–66.
+<a
+href="https://doi.org/10.2469/faj.v58.n5.2468">https://doi.org/10.2469/faj.v58.n5.2468</a>.
+</div>
+<div id="ref-clarke2006fundamental" class="csl-entry" role="listitem">
+Clarke, Roger, Harindra de Silva, and Steven Thorley. 2006. <span>“The
+Fundamental Law of Active Portfolio Management.”</span> <em>Journal of
+Investment Management</em> 4 (3).
+</div>
+<div id="ref-cont2001empirical" class="csl-entry" role="listitem">
+Cont, Rama. 2001. <span>“Empirical Properties of Asset Returns: Stylized
+Facts and Statistical Issues.”</span> <em>Quantitative Finance</em> 1
+(2): 223–36. <a
+href="https://doi.org/10.1080/713665670">https://doi.org/10.1080/713665670</a>.
+</div>
+<div id="ref-embrechts2002correlation" class="csl-entry"
+role="listitem">
+Embrechts, Paul, Alexander J. McNeil, and Daniel Straumann. 2002.
+<span>“Correlation and Dependence in Risk Management: Properties and
+Pitfalls.”</span> In <em>Risk Management: Value at Risk and Beyond</em>,
+edited by M. A. H. Dempster. Cambridge University Press. <a
+href="https://doi.org/10.1017/CBO9780511615337.008">https://doi.org/10.1017/CBO9780511615337.008</a>.
+</div>
+<div id="ref-grinold1989fundamental" class="csl-entry" role="listitem">
+Grinold, Richard C. 1989. <span>“The Fundamental Law of Active
+Management.”</span> <em>The Journal of Portfolio Management</em> 15 (3):
+30–37. <a
+href="https://doi.org/10.3905/jpm.1989.409211">https://doi.org/10.3905/jpm.1989.409211</a>.
+</div>
+<div id="ref-grinold2000active" class="csl-entry" role="listitem">
+Grinold, Richard C., and Ronald N. Kahn. 2000. <em>Active Portfolio
+Management: A Quantitative Approach for Producing Superior Returns and
+Controlling Risk</em>. 2nd ed. McGraw-Hill.
+</div>
+<div id="ref-kish1965survey" class="csl-entry" role="listitem">
+Kish, Leslie. 1965. <em>Survey Sampling</em>. John Wiley &amp; Sons.
+</div>
+<div id="ref-laloux1999noise" class="csl-entry" role="listitem">
+Laloux, Laurent, Pierre Cizeau, Jean-Philippe Bouchaud, and Marc
+Potters. 1999. <span>“Noise Dressing of Financial Correlation
+Matrices.”</span> <em>Physical Review Letters</em> 83 (7): 1467–70. <a
+href="https://doi.org/10.1103/PhysRevLett.83.1467">https://doi.org/10.1103/PhysRevLett.83.1467</a>.
+</div>
+<div id="ref-ledoit2004honey" class="csl-entry" role="listitem">
+Ledoit, Olivier, and Michael Wolf. 2004. <span>“Honey, <span>I</span>
+Shrunk the Sample Covariance Matrix.”</span> <em>The Journal of
+Portfolio Management</em> 30 (4): 110–19. <a
+href="https://doi.org/10.3905/jpm.2004.110">https://doi.org/10.3905/jpm.2004.110</a>.
+</div>
+<div id="ref-markowitz1952portfolio" class="csl-entry" role="listitem">
+Markowitz, Harry. 1952. <span>“Portfolio Selection.”</span> <em>The
+Journal of Finance</em> 7 (1): 77–91. <a
+href="https://doi.org/10.1111/j.1540-6261.1952.tb01525.x">https://doi.org/10.1111/j.1540-6261.1952.tb01525.x</a>.
+</div>
+<div id="ref-meucci2009managing" class="csl-entry" role="listitem">
+Meucci, Attilio. 2009. <span>“Managing Diversification.”</span>
+<em>Risk</em> 22 (5): 74–79.
+</div>
+<div id="ref-pearson1900tetrachoric" class="csl-entry" role="listitem">
+Pearson, Karl. 1900. <span>“Mathematical Contributions to the Theory of
+Evolution. <span>VII</span>. On the Correlation of Characters Not
+Quantitatively Measurable.”</span> <em>Philosophical Transactions of the
+Royal Society of London, Series A</em> 195: 1–47. <a
+href="https://doi.org/10.1098/rsta.1900.0022">https://doi.org/10.1098/rsta.1900.0022</a>.
+</div>
+</div>
+<section id="footnotes" class="footnotes footnotes-end-of-document"
+role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1"><p>The specific practitioner formulation we test, including
+the <span class="math inline">1-(1-p)^{N_{\mathrm{eff}}}</span> capacity
+step and the <span
+class="math inline">\mathbb{E}[\text{active}]=N_{\mathrm{eff}}\,p</span>
+load estimate, originates in the author’s own earlier practitioner
+writing (a market-making blog post). This paper is therefore a
+controlled self-audit of advice the author has himself circulated, not
+an attack on a third party.<a href="#fnref1" class="footnote-back"
+role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>
