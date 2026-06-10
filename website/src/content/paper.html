@@ -5,13 +5,13 @@ result is <span class="math inline">N</span> roughly-independent bets.
 It is not: the signals fire together, the positions move together, and
 the realized diversification is a fraction of the nominal count <span
 class="citation"
-data-cites="markowitz1952portfolio grinold1989fundamental">(Markowitz
-1952; Grinold 1989)</span>. The practical question is how large that
-fraction is, and whether it can be captured by a formula simple enough
-to use on the desk.</p>
+data-cites="markowitz1952portfolio grinold1989fundamental">[5,
+10]</span>. The practical question is how large that fraction is, and
+whether it can be captured by a formula simple enough to use on the
+desk.</p>
 <p>One such formula circulates widely. Borrowed from the design-effect
 of survey sampling <span class="citation"
-data-cites="kish1965survey">(Kish 1965)</span>, the equicorrelation
+data-cites="kish1965survey">[7]</span>, the equicorrelation
 <em>effective sample size</em> <span
 class="math display">\begin{equation}
 N_{\mathrm{eff}}\;=\; \frac{N}{1+(N-1)\bar{\rho}}
@@ -21,14 +21,12 @@ average pairwise correlation <span
 class="math inline">\bar{\rho}</span>. It is attractive because it needs
 only <span class="math inline">N</span> and one number, sidestepping the
 noisy full-covariance estimation that more principled measures require
-<span class="citation"
-data-cites="laloux1999noise ledoit2004honey">(Laloux et al. 1999; Ledoit
-and Wolf 2004)</span>. In practitioner writing it is used for two
-distinct purposes: to estimate how much diversification a basket of
-correlated strategies actually delivers, and—plugged into an
-independent-arrivals formula <span
-class="math inline">1-(1-p)^{N_{\mathrm{eff}}}</span>—to size how busy a
-capacity- or slot-limited execution system will be.<a href="#fn1"
+<span class="citation" data-cites="laloux1999noise ledoit2004honey">[8,
+9]</span>. In practitioner writing it is used for two distinct purposes:
+to estimate how much diversification a basket of correlated strategies
+actually delivers, and—plugged into an independent-arrivals formula
+<span class="math inline">1-(1-p)^{N_{\mathrm{eff}}}</span>—to size how
+busy a capacity- or slot-limited execution system will be.<a href="#fn1"
 class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>
 Neither use has, to our knowledge, been validated against ground
 truth.</p>
@@ -89,7 +87,7 @@ data-reference="sec:optimal">5.6</a>).</p></li>
 <h1 id="sec:related">Related work</h1>
 <p>The question of how many genuinely distinct bets a portfolio contains
 is as old as modern portfolio theory. <span class="citation"
-data-cites="markowitz1952portfolio">Markowitz (1952)</span> formalized
+data-cites="markowitz1952portfolio">[10]</span> formalized
 diversification through the covariance structure: portfolio variance
 depends not on the number of holdings but on their co-movement, so the
 naive count of <span class="math inline">N</span> positions overstates
@@ -98,63 +96,62 @@ overstatement for <span class="math inline">N</span> <em>trading
 signals</em> and ask whether a closed-form correction recovers the
 effective count.</p>
 <p>A literature seeks scalar summaries of diversification. <span
-class="citation" data-cites="meucci2009managing">Meucci (2009)</span>
-proposed the Effective Number of Bets (ENB): rotate the portfolio onto
-its uncorrelated principal portfolios, normalize their risk
-contributions into a diversification distribution, and exponentiate its
-Shannon entropy. The ENB equals <span class="math inline">N</span> when
-risk is spread evenly over <span class="math inline">N</span>
-uncorrelated sources and collapses toward one as risk concentrates. In
-this paper we use the spectral, portfolio-agnostic variant of Meucci’s
-measure—the exponential entropy of the correlation-matrix eigenvalue
-shares—which depends only on the correlation structure, not on a
-particular weight vector. It is correlation-aware and principled, but
-requires the full covariance matrix and an eigendecomposition—and, as
-the random-matrix critique <span class="citation"
-data-cites="laloux1999noise">(Laloux et al. 1999)</span> and shrinkage
-remedy <span class="citation" data-cites="ledoit2004honey">(Ledoit and
-Wolf 2004)</span> stress, that matrix is itself noisily estimated.</p>
+class="citation" data-cites="meucci2009managing">[11]</span> proposed
+the Effective Number of Bets (ENB): rotate the portfolio onto its
+uncorrelated principal portfolios, normalize their risk contributions
+into a diversification distribution, and exponentiate its Shannon
+entropy. The ENB equals <span class="math inline">N</span> when risk is
+spread evenly over <span class="math inline">N</span> uncorrelated
+sources and collapses toward one as risk concentrates. In this paper we
+use the spectral, portfolio-agnostic variant of Meucci’s measure—the
+exponential entropy of the correlation-matrix eigenvalue shares—which
+depends only on the correlation structure, not on a particular weight
+vector. It is correlation-aware and principled, but requires the full
+covariance matrix and an eigendecomposition—and, as the random-matrix
+critique <span class="citation" data-cites="laloux1999noise">[8]</span>
+and shrinkage remedy <span class="citation"
+data-cites="ledoit2004honey">[9]</span> stress, that matrix is itself
+noisily estimated.</p>
 <p>The active-management literature attacks the same problem through
 <em>breadth</em>. <span class="citation"
-data-cites="grinold1989fundamental">Grinold (1989)</span> introduced the
+data-cites="grinold1989fundamental">[5]</span> introduced the
 Fundamental Law, <span
 class="math inline">\mathrm{IR}\approx\mathrm{IC}\cdot\sqrt{BR}</span>,
 with breadth <span class="math inline">BR</span> the number of
 <em>independent</em> bets per period; <span class="citation"
-data-cites="grinold2000active">Grinold and Kahn (2000)</span> develop it
-in detail. Independence is the load-bearing assumption: when signals are
-correlated the raw count overstates breadth. <span class="citation"
-data-cites="clarke2002portfolio">Clarke et al. (2002)</span> generalized
-the law to constrained portfolios via the transfer coefficient, and
-<span class="citation" data-cites="clarke2006fundamental">Clarke et al.
-(2006)</span> extended it to a full covariance matrix, making explicit
-that breadth shrinks and becomes hard to define once signals are
-correlated. These works establish qualitatively that correlation erodes
-effective breadth, but supply no validated closed-form effective count
-for an arbitrary number of binary signals.</p>
+data-cites="grinold2000active">[6]</span> develop it in detail.
+Independence is the load-bearing assumption: when signals are correlated
+the raw count overstates breadth. <span class="citation"
+data-cites="clarke2002portfolio">[1]</span> generalized the law to
+constrained portfolios via the transfer coefficient, and <span
+class="citation" data-cites="clarke2006fundamental">[2]</span> extended
+it to a full covariance matrix, making explicit that breadth shrinks and
+becomes hard to define once signals are correlated. These works
+establish qualitatively that correlation erodes effective breadth, but
+supply no validated closed-form effective count for an arbitrary number
+of binary signals.</p>
 <p>A candidate formula exists in classical statistics: under
 equicorrelation the variance of the sample mean of <span
 class="math inline">N</span> unit-variance variables is inflated by
 <span class="math inline">1+(N-1)\bar{\rho}</span>, giving the effective
 sample size <a href="#eq:neff" data-reference-type="eqref"
 data-reference="eq:neff">(neff)</a>, the design-effect of survey
-sampling <span class="citation" data-cites="kish1965survey">(Kish
-1965)</span>. Two features of trading signals complicate its transplant.
-First, signals are typically <em>binary</em>, and the relevant
-correlation is between Bernoulli indicators, not their latent drivers;
-dichotomizing a bivariate normal attenuates the observed correlation in
-a nonlinear, base-rate-dependent way—the classical tetrachoric problem
-<span class="citation" data-cites="pearson1900tetrachoric">(Pearson
-1900)</span>. Second, dependence is not fully captured by linear
-correlation: stylized facts <span class="citation"
-data-cites="cont2001empirical">(Cont 2001)</span> and copula critiques
-<span class="citation" data-cites="embrechts2002correlation">(Embrechts
-et al. 2002)</span> warn that a single <span
-class="math inline">\bar{\rho}</span> can mislead. A validation must
-therefore be explicit about which correlation it uses and under what
-structure it is asked to hold. We close this gap by simulation, taking
-the realized variance reduction and a correlated-Bernoulli capacity
-model as ground truth.</p>
+sampling <span class="citation" data-cites="kish1965survey">[7]</span>.
+Two features of trading signals complicate its transplant. First,
+signals are typically <em>binary</em>, and the relevant correlation is
+between Bernoulli indicators, not their latent drivers; dichotomizing a
+bivariate normal attenuates the observed correlation in a nonlinear,
+base-rate-dependent way—the classical tetrachoric problem <span
+class="citation" data-cites="pearson1900tetrachoric">[12]</span>.
+Second, dependence is not fully captured by linear correlation: stylized
+facts <span class="citation" data-cites="cont2001empirical">[3]</span>
+and copula critiques <span class="citation"
+data-cites="embrechts2002correlation">[4]</span> warn that a single
+<span class="math inline">\bar{\rho}</span> can mislead. A validation
+must therefore be explicit about which correlation it uses and under
+what structure it is asked to hold. We close this gap by simulation,
+taking the realized variance reduction and a correlated-Bernoulli
+capacity model as ground truth.</p>
 <h1 id="sec:measures">Effective-breadth measures</h1>
 <p>We compare three quantities. The <strong>equicorrelation <span
 class="math inline">N_{\mathrm{eff}}</span></strong> of <a
@@ -191,11 +188,11 @@ exceeds a threshold set to give activation probability <span
 class="math inline">p</span>. The correlation of the resulting binary
 indicators is <em>not</em> <span class="math inline">\rho</span>;
 thresholding attenuates it <span class="citation"
-data-cites="pearson1900tetrachoric">(Pearson 1900)</span>. Whether one
-feeds <span class="math inline">N_{\mathrm{eff}}</span> the binary
-signal correlation or the latent correlation therefore changes the
-answer, and the shortcut is silent on which to use. We evaluate both
-feedings throughout.</p>
+data-cites="pearson1900tetrachoric">[12]</span>. Whether one feeds <span
+class="math inline">N_{\mathrm{eff}}</span> the binary signal
+correlation or the latent correlation therefore changes the answer, and
+the shortcut is silent on which to use. We evaluate both feedings
+throughout.</p>
 <h1 id="sec:framework">Simulation framework</h1>
 <p>Each experiment draws a population of <span
 class="math inline">N</span> signals over <span
@@ -809,11 +806,11 @@ count.</p>
 <p>Our dependence is Gaussian-copula with one factor plus optional
 blocks; real signals exhibit tail co-movement and regime-dependent
 correlation <span class="citation"
-data-cites="cont2001empirical embrechts2002correlation">(Cont 2001;
-Embrechts et al. 2002)</span> that a single <span
-class="math inline">\bar{\rho}</span> cannot represent and that would
-further stress <span class="math inline">N_{\mathrm{eff}}</span>. Our
-return model <a href="#eq:returns" data-reference-type="eqref"
+data-cites="cont2001empirical embrechts2002correlation">[3, 4]</span>
+that a single <span class="math inline">\bar{\rho}</span> cannot
+represent and that would further stress <span
+class="math inline">N_{\mathrm{eff}}</span>. Our return model <a
+href="#eq:returns" data-reference-type="eqref"
 data-reference="eq:returns">(returns)</a> ties PnL co-movement to a
 single constant <span class="math inline">\beta</span> per portfolio;
 real return loadings vary across instruments and time, and our <span
@@ -861,75 +858,90 @@ script <code>run_all.py</code> regenerates every number and figure, and
 quoted in this paper matches the generated results. The generative
 model, the breadth and capacity measures, and the analysis are provided
 as an open-source package.</p>
-<h1 id="references">References</h1><div id="refs" class="references csl-bib-body hanging-indent"
+<h1 id="references">References</h1><div id="refs" class="references csl-bib-body" data-entry-spacing="1"
 role="list">
 <div id="ref-clarke2002portfolio" class="csl-entry" role="listitem">
-Clarke, Roger, Harindra de Silva, and Steven Thorley. 2002.
-<span>“Portfolio Constraints and the Fundamental Law of Active
-Management.”</span> <em>Financial Analysts Journal</em> 58 (5): 48–66.
+<div class="csl-left-margin">[1] </div><div
+class="csl-right-inline">Roger Clarke, Harindra de Silva, and Steven
+Thorley. Portfolio constraints and the fundamental law of active
+management. <em>Financial Analysts Journal</em>, 58(5):48–66, 2002. doi:
 <a
-href="https://doi.org/10.2469/faj.v58.n5.2468">https://doi.org/10.2469/faj.v58.n5.2468</a>.
+href="https://doi.org/10.2469/faj.v58.n5.2468">10.2469/faj.v58.n5.2468</a>.</div>
 </div>
 <div id="ref-clarke2006fundamental" class="csl-entry" role="listitem">
-Clarke, Roger, Harindra de Silva, and Steven Thorley. 2006. <span>“The
-Fundamental Law of Active Portfolio Management.”</span> <em>Journal of
-Investment Management</em> 4 (3).
+<div class="csl-left-margin">[2] </div><div
+class="csl-right-inline">Roger Clarke, Harindra de Silva, and Steven
+Thorley. The fundamental law of active portfolio management. <em>Journal
+of Investment Management</em>, 4(3), 2006.</div>
 </div>
 <div id="ref-cont2001empirical" class="csl-entry" role="listitem">
-Cont, Rama. 2001. <span>“Empirical Properties of Asset Returns: Stylized
-Facts and Statistical Issues.”</span> <em>Quantitative Finance</em> 1
-(2): 223–36. <a
-href="https://doi.org/10.1080/713665670">https://doi.org/10.1080/713665670</a>.
+<div class="csl-left-margin">[3] </div><div
+class="csl-right-inline">Rama Cont. Empirical properties of asset
+returns: Stylized facts and statistical issues. <em>Quantitative
+Finance</em>, 1(2):223–236, 2001. doi: <a
+href="https://doi.org/10.1080/713665670">10.1080/713665670</a>.</div>
 </div>
 <div id="ref-embrechts2002correlation" class="csl-entry"
 role="listitem">
-Embrechts, Paul, Alexander J. McNeil, and Daniel Straumann. 2002.
-<span>“Correlation and Dependence in Risk Management: Properties and
-Pitfalls.”</span> In <em>Risk Management: Value at Risk and Beyond</em>,
-edited by M. A. H. Dempster. Cambridge University Press. <a
-href="https://doi.org/10.1017/CBO9780511615337.008">https://doi.org/10.1017/CBO9780511615337.008</a>.
+<div class="csl-left-margin">[4] </div><div
+class="csl-right-inline">Paul Embrechts, Alexander J. McNeil, and Daniel
+Straumann. Correlation and dependence in risk management: Properties and
+pitfalls. In <em>Risk management: Value at risk and beyond</em>, pages
+176–223, 2002. doi: <a
+href="https://doi.org/10.1017/CBO9780511615337.008">10.1017/CBO9780511615337.008</a>.</div>
 </div>
 <div id="ref-grinold1989fundamental" class="csl-entry" role="listitem">
-Grinold, Richard C. 1989. <span>“The Fundamental Law of Active
-Management.”</span> <em>The Journal of Portfolio Management</em> 15 (3):
-30–37. <a
-href="https://doi.org/10.3905/jpm.1989.409211">https://doi.org/10.3905/jpm.1989.409211</a>.
+<div class="csl-left-margin">[5] </div><div
+class="csl-right-inline">Richard C. Grinold. The fundamental law of
+active management. <em>The Journal of Portfolio Management</em>,
+15(3):30–37, 1989. doi: <a
+href="https://doi.org/10.3905/jpm.1989.409211">10.3905/jpm.1989.409211</a>.</div>
 </div>
 <div id="ref-grinold2000active" class="csl-entry" role="listitem">
-Grinold, Richard C., and Ronald N. Kahn. 2000. <em>Active Portfolio
-Management: A Quantitative Approach for Producing Superior Returns and
-Controlling Risk</em>. 2nd ed. McGraw-Hill.
+<div class="csl-left-margin">[6] </div><div
+class="csl-right-inline">Richard C. Grinold and Ronald N. Kahn.
+<em>Active portfolio management: A quantitative approach for producing
+superior returns and controlling risk</em>. McGraw-Hill, 2000.</div>
 </div>
 <div id="ref-kish1965survey" class="csl-entry" role="listitem">
-Kish, Leslie. 1965. <em>Survey Sampling</em>. John Wiley &amp; Sons.
+<div class="csl-left-margin">[7] </div><div
+class="csl-right-inline">Leslie Kish. <em>Survey sampling</em>. John
+Wiley &amp; Sons, 1965.</div>
 </div>
 <div id="ref-laloux1999noise" class="csl-entry" role="listitem">
-Laloux, Laurent, Pierre Cizeau, Jean-Philippe Bouchaud, and Marc
-Potters. 1999. <span>“Noise Dressing of Financial Correlation
-Matrices.”</span> <em>Physical Review Letters</em> 83 (7): 1467–70. <a
-href="https://doi.org/10.1103/PhysRevLett.83.1467">https://doi.org/10.1103/PhysRevLett.83.1467</a>.
+<div class="csl-left-margin">[8] </div><div
+class="csl-right-inline">Laurent Laloux, Pierre Cizeau, Jean-Philippe
+Bouchaud, and Marc Potters. Noise dressing of financial correlation
+matrices. <em>Physical Review Letters</em>, 83(7):1467–1470, 1999. doi:
+<a
+href="https://doi.org/10.1103/PhysRevLett.83.1467">10.1103/PhysRevLett.83.1467</a>.</div>
 </div>
 <div id="ref-ledoit2004honey" class="csl-entry" role="listitem">
-Ledoit, Olivier, and Michael Wolf. 2004. <span>“Honey, <span>I</span>
-Shrunk the Sample Covariance Matrix.”</span> <em>The Journal of
-Portfolio Management</em> 30 (4): 110–19. <a
-href="https://doi.org/10.3905/jpm.2004.110">https://doi.org/10.3905/jpm.2004.110</a>.
+<div class="csl-left-margin">[9] </div><div
+class="csl-right-inline">Olivier Ledoit and Michael Wolf. Honey,
+<span>I</span> shrunk the sample covariance matrix. <em>The Journal of
+Portfolio Management</em>, 30(4):110–119, 2004. doi: <a
+href="https://doi.org/10.3905/jpm.2004.110">10.3905/jpm.2004.110</a>.</div>
 </div>
 <div id="ref-markowitz1952portfolio" class="csl-entry" role="listitem">
-Markowitz, Harry. 1952. <span>“Portfolio Selection.”</span> <em>The
-Journal of Finance</em> 7 (1): 77–91. <a
-href="https://doi.org/10.1111/j.1540-6261.1952.tb01525.x">https://doi.org/10.1111/j.1540-6261.1952.tb01525.x</a>.
+<div class="csl-left-margin">[10] </div><div
+class="csl-right-inline">Harry Markowitz. Portfolio selection. <em>The
+Journal of Finance</em>, 7(1):77–91, 1952. doi: <a
+href="https://doi.org/10.1111/j.1540-6261.1952.tb01525.x">10.1111/j.1540-6261.1952.tb01525.x</a>.</div>
 </div>
 <div id="ref-meucci2009managing" class="csl-entry" role="listitem">
-Meucci, Attilio. 2009. <span>“Managing Diversification.”</span>
-<em>Risk</em> 22 (5): 74–79.
+<div class="csl-left-margin">[11] </div><div
+class="csl-right-inline">Attilio Meucci. Managing diversification.
+<em>Risk</em>, 22(5):74–79, 2009. Also available as SSRN Working Paper
+1358533.</div>
 </div>
 <div id="ref-pearson1900tetrachoric" class="csl-entry" role="listitem">
-Pearson, Karl. 1900. <span>“Mathematical Contributions to the Theory of
-Evolution. <span>VII</span>. On the Correlation of Characters Not
-Quantitatively Measurable.”</span> <em>Philosophical Transactions of the
-Royal Society of London, Series A</em> 195: 1–47. <a
-href="https://doi.org/10.1098/rsta.1900.0022">https://doi.org/10.1098/rsta.1900.0022</a>.
+<div class="csl-left-margin">[12] </div><div
+class="csl-right-inline">Karl Pearson. Mathematical contributions to the
+theory of evolution. <span>VII</span>. On the correlation of characters
+not quantitatively measurable. <em>Philosophical Transactions of the
+Royal Society of London, Series A</em>, 195:1–47, 1900. doi: <a
+href="https://doi.org/10.1098/rsta.1900.0022">10.1098/rsta.1900.0022</a>.</div>
 </div>
 </div>
 <section id="footnotes" class="footnotes footnotes-end-of-document"
